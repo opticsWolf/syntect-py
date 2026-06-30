@@ -28,42 +28,57 @@ use crate::parse_state::PyScope;
 /// - "\r\n" (CRLF)
 /// - "\r" (carriage return)
 /// - "" (no ending, last line)
+///
+/// Optimized version that avoids Vec<char> allocation by using str::find.
 pub fn split_lines_with_endings(content: &str) -> Vec<(String, String)> {
     let mut lines = Vec::new();
-    let mut current_line = String::new();
-    let mut i = 0;
-    let chars: Vec<char> = content.chars().collect();
-    let len = chars.len();
+    let mut start = 0;
 
-    while i < len {
-        let ch = chars[i];
-        match ch {
-            '\n' => {
-                lines.push((current_line.clone(), "\n".to_string()));
-                current_line.clear();
-                i += 1;
-            }
-            '\r' => {
-                if i + 1 < len && chars[i + 1] == '\n' {
-                    lines.push((current_line.clone(), "\r\n".to_string()));
-                    current_line.clear();
-                    i += 2;
+    while start < content.len() {
+        // Find the next line ending
+        let next_newline = content[start..].find('\n');
+        let next_cr = content[start..].find('\r');
+
+        let (end_pos, ending) = match (next_cr, next_newline) {
+            (Some(cr_pos), Some(nl_pos)) => {
+                // Both found - check which comes first
+                if cr_pos < nl_pos {
+                    // CR first - check for CRLF
+                    if cr_pos + 1 < content[start..].len() && content.as_bytes()[start + cr_pos + 1] == b'\n' {
+                        (start + cr_pos + 2, "\r\n")
+                    } else {
+                        (start + cr_pos + 1, "\r")
+                    }
                 } else {
-                    lines.push((current_line.clone(), "\r".to_string()));
-                    current_line.clear();
-                    i += 1;
+                    // NL first
+                    (start + nl_pos + 1, "\n")
                 }
             }
-            _ => {
-                current_line.push(ch);
-                i += 1;
+            (Some(cr_pos), None) => {
+                // CR only
+                if cr_pos + 1 < content[start..].len() && content.as_bytes()[start + cr_pos + 1] == b'\n' {
+                    (start + cr_pos + 2, "\r\n")
+                } else {
+                    (start + cr_pos + 1, "\r")
+                }
             }
-        }
-    }
+            (None, Some(nl_pos)) => {
+                // NL only
+                (start + nl_pos + 1, "\n")
+            }
+            (None, None) => {
+                // No more line endings - remaining content is the last line
+                let remaining = &content[start..];
+                if !remaining.is_empty() {
+                    lines.push((remaining.to_string(), String::new()));
+                }
+                break;
+            }
+        };
 
-    // Add remaining content (last line without ending)
-    if !current_line.is_empty() {
-        lines.push((current_line, String::new()));
+        let line = &content[start..end_pos - ending.len()];
+        lines.push((line.to_string(), ending.to_string()));
+        start = end_pos;
     }
 
     lines
@@ -180,7 +195,9 @@ impl PyHighlightState {
 /// ```
 #[pyclass(name = "HighlightLines", skip_from_py_object)]
 pub struct PyHighlightLines {
+    #[allow(dead_code)]
     syntax_name: String,
+    syntax_ref: syntect::parsing::SyntaxReference,
     theme: syntect::highlighting::Theme,
 }
 
@@ -189,16 +206,26 @@ impl PyHighlightLines {
     #[new]
     pub fn new(
         syntax_ref: &PySyntaxReference,
+        syntax_set: &PySyntaxSet,
         theme_set: &PyThemeSet,
         theme_name: &str,
     ) -> PyResult<Self> {
+        let syntax = syntax_set.inner.find_syntax_by_name(&syntax_ref.name)
+            .ok_or_else(|| PyErr::new::<PyValueError, _>(
+                format!("Syntax not found: {}", syntax_ref.name)
+            ))?;
+
         let real_theme = theme_set.inner.themes.get(theme_name)
             .ok_or_else(|| PyErr::new::<PyValueError, _>(
                 format!("Theme not found: {}", theme_name)
             ))?;
 
+        // Clone the syntax reference so we own it and can store it
+        let syntax_ref_clone = syntax.clone();
+
         Ok(PyHighlightLines {
             syntax_name: syntax_ref.name.clone(),
+            syntax_ref: syntax_ref_clone,
             theme: real_theme.clone(),
         })
     }
@@ -207,19 +234,21 @@ impl PyHighlightLines {
     ///
     /// The style is a real PyStyle object with foreground, background, and font_style.
     ///
+    /// Empty lines return an empty token list.
+    ///
     /// Example:
     /// ```python
-    /// hl = syntect.HighlightLines(rust, ts, "Solarized (dark)")
+    /// hl = syntect.HighlightLines(rust, ss, ts, "Solarized (dark)")
     /// tokens = hl.highlight_line("fn main() {", ss)
     /// ```
     pub fn highlight_line(&self, line: &str, syntax_set: &PySyntaxSet) -> PyResult<Vec<(PyStyle, String)>> {
-        // Look up the real syntax from the syntax set
-        let syntax_ref = syntax_set.inner.find_syntax_by_name(&self.syntax_name)
-            .ok_or_else(|| PyErr::new::<PyValueError, _>(
-                format!("Syntax not found: {}", self.syntax_name)
-            ))?;
+        // Handle empty line early
+        if line.is_empty() {
+            return Ok(Vec::new());
+        }
 
-        let mut highlighter = HighlightLines::new(syntax_ref, &self.theme);
+        // Use the stored syntax reference (avoids lookup on each call)
+        let mut highlighter = HighlightLines::new(&self.syntax_ref, &self.theme);
         match highlighter.highlight_line(line, &syntax_set.inner) {
             Ok(ranges) => {
                 let tokens: Vec<(PyStyle, String)> = ranges.iter().map(|(style, text)| {
@@ -271,6 +300,8 @@ impl PyHighlighter {
     ///
     /// The style is a real PyStyle object with foreground, background, and font_style.
     ///
+    /// Empty lines return an empty token list.
+    ///
     /// Example:
     /// ```python
     /// tokens = hl.highlight_line("fn main() {", ss, ts)
@@ -278,15 +309,28 @@ impl PyHighlighter {
     ///     print(style.foreground, text)
     /// ```
     pub fn highlight_line(&self, line: &str, syntax_set: &PySyntaxSet, theme_set: &PyThemeSet) -> PyResult<Vec<(PyStyle, String)>> {
+        // Handle empty line early
+        if line.is_empty() {
+            return Ok(Vec::new());
+        }
+
         let syntax_ref = syntax_set.inner.find_syntax_by_name(&self.syntax_name)
-            .ok_or_else(|| PyErr::new::<PyValueError, _>(
-                format!("Syntax not found: {}", self.syntax_name)
-            ))?;
+            .ok_or_else(|| {
+                let available: Vec<String> = syntax_set.inner.syntaxes().iter()
+                    .map(|s| s.name.clone())
+                    .collect();
+                PyErr::new::<PyValueError, _>(
+                    format!("Syntax '{}' not found. Available syntaxes (showing first 10): {}", 
+                        self.syntax_name, available.iter().take(10).map(|s| s.clone()).collect::<Vec<String>>().join(", ")))
+            })?;
 
         let real_theme = theme_set.inner.themes.get(&self.theme_name)
-            .ok_or_else(|| PyErr::new::<PyValueError, _>(
-                format!("Theme not found: {}", self.theme_name)
-            ))?;
+            .ok_or_else(|| {
+                let available: Vec<String> = theme_set.inner.themes.keys().cloned().collect();
+                PyErr::new::<PyValueError, _>(
+                    format!("Theme '{}' not found. Available themes: {}", 
+                        self.theme_name, available.join(", ")))
+            })?;
 
         let mut highlighter = HighlightLines::new(syntax_ref, real_theme);
         match highlighter.highlight_line(line, &syntax_set.inner) {
@@ -306,17 +350,32 @@ impl PyHighlighter {
     ///
     /// Handles both newline (\\n) and CRLF (\\r\\n) line endings correctly.
     ///
+    /// Empty code returns an empty list. Empty lines return empty token lists.
+    ///
     /// Returns a list of token lists, one per line.
     pub fn highlight_lines(&self, code: &str, syntax_set: &PySyntaxSet, theme_set: &PyThemeSet) -> PyResult<Vec<Vec<(PyStyle, String)>>> {
+        // Handle empty code early
+        if code.is_empty() {
+            return Ok(Vec::new());
+        }
+
         let syntax_ref = syntax_set.inner.find_syntax_by_name(&self.syntax_name)
-            .ok_or_else(|| PyErr::new::<PyValueError, _>(
-                format!("Syntax not found: {}", self.syntax_name)
-            ))?;
+            .ok_or_else(|| {
+                let available: Vec<String> = syntax_set.inner.syntaxes().iter()
+                    .map(|s| s.name.clone())
+                    .collect();
+                PyErr::new::<PyValueError, _>(
+                    format!("Syntax '{}' not found. Available syntaxes (showing first 10): {}", 
+                        self.syntax_name, available.iter().take(10).map(|s| s.clone()).collect::<Vec<String>>().join(", ")))
+            })?;
 
         let real_theme = theme_set.inner.themes.get(&self.theme_name)
-            .ok_or_else(|| PyErr::new::<PyValueError, _>(
-                format!("Theme not found: {}", self.theme_name)
-            ))?;
+            .ok_or_else(|| {
+                let available: Vec<String> = theme_set.inner.themes.keys().cloned().collect();
+                PyErr::new::<PyValueError, _>(
+                    format!("Theme '{}' not found. Available themes: {}", 
+                        self.theme_name, available.join(", ")))
+            })?;
 
         let mut highlighter = HighlightLines::new(syntax_ref, real_theme);
         let mut all_tokens: Vec<Vec<(PyStyle, String)>> = Vec::new();
@@ -454,6 +513,8 @@ impl PyHighlighter {
 /// Returns a HighlightResult with tokens (real PyStyle objects), HTML, and
 /// terminal escape output.
 ///
+/// Empty strings return an empty HighlightResult with no tokens or HTML.
+///
 /// Example:
 /// ```python
 /// result = syntect.highlight_string(
@@ -475,16 +536,35 @@ pub fn highlight_string(
     syntax_set: &PySyntaxSet,
     theme_set: &PyThemeSet,
 ) -> PyResult<crate::convenience::PyHighlightResult> {
-    // Find the syntax and theme
+    // Handle empty string early
+    if code.is_empty() {
+        return Ok(crate::convenience::PyHighlightResult {
+            tokens: Vec::new(),
+            html: String::new(),
+            terminal_escaped: String::new(),
+        });
+    }
+
+    // Find the syntax and theme with improved error messages
     let syntax_ref = syntax_set.inner.find_syntax_by_name(syntax_name)
-        .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>(
-            format!("Syntax not found: {}", syntax_name)
-        ))?;
+        .ok_or_else(|| {
+            let available: Vec<String> = syntax_set.inner.syntaxes().iter()
+                .map(|s| s.name.clone())
+                .collect();
+            PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                format!("Syntax '{}' not found. Available syntaxes (showing first 10): {}", 
+                    syntax_name, available.iter().take(10).map(|s| s.clone()).collect::<Vec<String>>().join(", "))
+            )
+        })?;
 
     let theme = theme_set.inner.themes.get(theme_name)
-        .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>(
-            format!("Theme not found: {}", theme_name)
-        ))?;
+        .ok_or_else(|| {
+            let available: Vec<String> = theme_set.inner.themes.keys().cloned().collect();
+            PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                format!("Theme '{}' not found. Available themes: {}", 
+                    theme_name, available.join(", "))
+            )
+        })?;
 
     // Create highlighter and highlight
     let mut highlighter = HighlightLines::new(syntax_ref, theme);

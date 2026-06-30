@@ -9,14 +9,14 @@ class TestHighlightLines:
     def test_create_highlight_lines(self, ss, ts):
         """Test creating a HighlightLines instance."""
         rust = ss.find_syntax_by_name("Rust")
-        hl = syntect.HighlightLines(rust, ts, "Solarized (dark)")
+        hl = syntect.HighlightLines(rust, ss, ts, "Solarized (dark)")
         assert hl is not None
         assert "HighlightLines" in repr(hl)
 
     def test_highlight_line(self, ss, ts):
         """Test highlighting a single line."""
         rust = ss.find_syntax_by_name("Rust")
-        hl = syntect.HighlightLines(rust, ts, "Solarized (dark)")
+        hl = syntect.HighlightLines(rust, ss, ts, "Solarized (dark)")
         tokens = hl.highlight_line("fn main()", ss)
         assert len(tokens) > 0
         for style, text in tokens:
@@ -27,7 +27,7 @@ class TestHighlightLines:
     def test_highlight_multiple_lines(self, ss, ts):
         """Test highlighting multiple lines with stateful highlighting."""
         rust = ss.find_syntax_by_name("Rust")
-        hl = syntect.HighlightLines(rust, ts, "Solarized (dark)")
+        hl = syntect.HighlightLines(rust, ss, ts, "Solarized (dark)")
         code = "fn main() {\n    let x = 1;\n}"
         for line in code.split("\n"):
             tokens = hl.highlight_line(line, ss)
@@ -36,7 +36,7 @@ class TestHighlightLines:
     def test_highlight_lines_stateful(self, ss, ts):
         """Test that HighlightLines maintains state across calls."""
         rust = ss.find_syntax_by_name("Rust")
-        hl = syntect.HighlightLines(rust, ts, "Solarized (dark)")
+        hl = syntect.HighlightLines(rust, ss, ts, "Solarized (dark)")
 
         # First line
         tokens1 = hl.highlight_line("fn main() {", ss)
@@ -50,7 +50,7 @@ class TestHighlightLines:
         """Test that HighlightLines produces same output as Highlighter."""
         rust = ss.find_syntax_by_name("Rust")
         theme = ts.get_theme("Solarized (dark)")
-        hl_lines = syntect.HighlightLines(rust, ts, "Solarized (dark)")
+        hl_lines = syntect.HighlightLines(rust, ss, ts, "Solarized (dark)")
         hl = syntect.Highlighter(rust, theme)
 
         line = "fn main()"
@@ -68,7 +68,7 @@ class TestHighlightLines:
         """Test error handling for non-existent theme."""
         rust = ss.find_syntax_by_name("Rust")
         with pytest.raises(ValueError):
-            syntect.HighlightLines(rust, ts, "NonExistentTheme")
+            syntect.HighlightLines(rust, ss, ts, "NonExistentTheme")
 
 
 @pytest.fixture

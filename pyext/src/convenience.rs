@@ -42,81 +42,13 @@ impl PyHighlightResult {
     }
 
     pub fn as_terminal_escaped(&self, include_bg: bool) -> PyResult<String> {
-        let mut result = String::new();
-
-        for (style, text) in &self.tokens {
-            if include_bg {
-                result.push_str(&format!("\x1b[48;2;{};{};{}m",
-                    style.background.r, style.background.g, style.background.b));
-            }
-
-            let fg = style.foreground.clone();
-            let bg = style.background.clone();
-            let blended_fg = if fg.a == 0xff {
-                fg
-            } else {
-                let ratio = fg.a as u32;
-                PyColor {
-                    r: ((fg.r as u32 * ratio + bg.r as u32 * (255 - ratio)) / 255) as u8,
-                    g: ((fg.g as u32 * ratio + bg.g as u32 * (255 - ratio)) / 255) as u8,
-                    b: ((fg.b as u32 * ratio + bg.b as u32 * (255 - ratio)) / 255) as u8,
-                    a: 255,
-                }
-            };
-
-            result.push_str(&format!("\x1b[38;2;{};{};{}m{}",
-                blended_fg.r, blended_fg.g, blended_fg.b, text));
-        }
-
-        Ok(result)
+        // Delegate to shared implementation to avoid code duplication
+        Ok(crate::util::as_terminal_escaped_impl_convenience(&self.tokens, include_bg))
     }
 
     pub fn as_latex_escaped(&self) -> PyResult<String> {
-        let mut result = String::new();
-        let mut prev_style: Option<PyStyle> = None;
-
-        for (style, text) in &self.tokens {
-            if text == " " || text == "\n" {
-                if prev_style == Some(style.clone()) {
-                    if text == " " {
-                        result.push(' ');
-                    }
-                    continue;
-                }
-            }
-
-            if let Some(ps) = prev_style {
-                if ps != style.clone() {
-                    result.push('}');
-                }
-            }
-
-            result.push_str(&format!(
-                "\\textcolor[RGB]{{{},{},{}}}{{",
-                style.foreground.r,
-                style.foreground.g,
-                style.foreground.b
-            ));
-
-            let mut escaped = String::new();
-            for ch in text.chars() {
-                match ch {
-                    '\\' => escaped.push_str("\\\\"),
-                    '{' => escaped.push_str("\\{"),
-                    '}' => escaped.push_str("\\}"),
-                    _ => escaped.push(ch),
-                }
-            }
-            result.push_str(&escaped);
-
-            prev_style = Some(style.clone());
-        }
-
-        if prev_style.is_some() {
-            result.push('}');
-        }
-
-        Ok(result)
+        // Delegate to shared implementation to avoid code duplication
+        Ok(crate::util::as_latex_escaped_impl_convenience(&self.tokens))
     }
 
     pub fn __repr__(&self) -> String {

@@ -204,7 +204,7 @@ class TestHighlightLines:
 
     def test_highlight_lines_stateful(self, ss, ts, theme, rust):
         """Test HighlightLines maintains state across lines."""
-        hl = syntect.HighlightLines(rust, ts, theme.key)
+        hl = syntect.HighlightLines(rust, ss, ts, theme.key)
         tokens1 = hl.highlight_line("fn main() {", ss)
         tokens2 = hl.highlight_line("    let x = 42;", ss)
         # Both should return tokens
@@ -213,7 +213,7 @@ class TestHighlightLines:
 
     def test_highlight_lines_save_restore(self, ss, ts, theme, rust):
         """Test HighlightLines can be created and used."""
-        hl = syntect.HighlightLines(rust, ts, theme.key)
+        hl = syntect.HighlightLines(rust, ss, ts, theme.key)
         # HighlightLines doesn't have save_state/from_state in the Python bindings
         # but it is stateful via the upstream HighlightLines type
         tokens = hl.highlight_line("fn main() {", ss)

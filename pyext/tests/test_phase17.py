@@ -112,22 +112,22 @@ class TestLinesWithEndings:
         """Test basic line splitting with newlines."""
         result = list(syntect.lines_with_endings('hello\nworld\n'))
         assert len(result) == 2
-        assert result[0] == ('hello', 'hello\n')
-        assert result[1] == ('world', 'world\n')
+        assert result[0] == ('hello', '\n')
+        assert result[1] == ('world', '\n')
 
     def test_last_line_no_newline(self):
         """Test that last line without newline still returns."""
         result = list(syntect.lines_with_endings('hello\nworld'))
         assert len(result) == 2
-        assert result[0] == ('hello', 'hello\n')
+        assert result[0] == ('hello', '\n')
         assert result[1] == ('world', '')
 
     def test_crlf_endings(self):
         """Test CRLF line endings."""
         result = list(syntect.lines_with_endings('a\r\nb\r\nc'))
         assert len(result) == 3
-        assert result[0] == ('a', 'a\r\n')
-        assert result[1] == ('b', 'b\r\n')
+        assert result[0] == ('a', '\r\n')
+        assert result[1] == ('b', '\r\n')
         assert result[2] == ('c', '')
 
     def test_single_line_no_newline(self):

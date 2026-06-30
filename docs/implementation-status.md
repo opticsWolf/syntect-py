@@ -282,7 +282,7 @@ pyo3 = { version = "0.29", features = ["macros", "abi3-py39"] }
 
 ### pytest Results
 ```
-36 passed in 0.55s
+50 passed in 0.67s
 ```
 
 ### Test Coverage
@@ -294,6 +294,9 @@ pyo3 = { version = "0.29", features = ["macros", "abi3-py39"] }
 - Dump utilities (load/save roundtrip)
 - Error types
 - ClassStyle, IncludeBg enums
+- Integration: full pipeline, file highlighting, CSS, dump roundtrips
+- Integration: ThemeItem.style, ThemeSettings colors, ParseLineOutput ops
+- Integration: all output formats, file extension detection, Style equality
 
 ## Version History
 
@@ -373,6 +376,54 @@ pyo3 = { version = "0.29", features = ["macros", "abi3-py39"] }
   - Added `#[allow(unused_assignments)]` where needed
   - Fixed move errors with `.clone()` on PyColor fields
 - **Zero warnings** - Build produces clean output with no warnings
+
+### v5.3.0-py7 (Phase 7)
+- **ThemeItem.style** - Added `style` property returning `StyleModifier` object
+- **ThemeSettings** - All color properties now return `Color` objects instead of hex strings
+  - `foreground`, `background`, `selection_background`, `gutter_foreground`, `gutter_background`
+- **ParseLineOutput** - Added `get_scope_stack_op(index)` and `get_op_type(index)` methods
+- **converters.rs** - Real conversion module with:
+  - `syntect_style_to_py`, `syntect_color_to_py`, `syntect_font_style_to_py`
+  - `py_color_to_syntect`, `py_font_style_to_syntect`, `py_style_to_syntect`
+  - `default_font_style`, `font_style_from_bits`
+
+### v5.3.0-py8 (Phase 8)
+- **Highlighter.highlight_file(path)** - Highlight all lines in a file
+  - Reads file content and highlights each line
+  - Returns `Vec<Vec<(PyStyle, String)>>` (one token list per line)
+- **LinesWithEndings** - `split_lines_with_endings()` helper function
+  - Splits content into lines with ending characters (`\n`, `\r\n`, `\r`, or empty)
+  - Handles all line ending types correctly
+
+### v5.3.0-py9 (Phase 9)
+- **generate_css** - Alias for `css_for_theme`
+- **create_html_file** - Alias for `highlighted_html_for_string_py`
+- **SyntaxSet.from_dump(path)** - Load SyntaxSet from .packdump file
+- **SyntaxSet.to_dump(path)** - Save SyntaxSet to .packdump file
+- **ThemeSet.from_dump(path)** - Load ThemeSet from .themedump file
+- **ThemeSet.to_dump(path)** - Save ThemeSet to .themedump file
+
+### v5.3.0-py10 (Phase 10)
+- **Examples** - 7 example scripts:
+  - `basic_highlight.py` - Basic syntax highlighting
+  - `advanced_highlight.py` - Advanced parsing and themes
+  - `benchmark.py` - Performance benchmarking
+  - `highlight_file.py` - Highlight a file to terminal
+  - `highlight_html.py` - Highlight code to full HTML file
+  - `incremental.py` - Demonstrate incremental highlighting state
+  - `css_generator.py` - Generate CSS from theme
+- **Integration tests** - 14 integration tests covering:
+  - Full highlight pipeline
+  - File highlighting
+  - CSS generation
+  - Dump roundtrips
+  - ThemeItem.style and ThemeSettings colors
+  - ParseLineOutput ops
+  - All output formats
+  - File extension detection
+  - Style equality and FontStyle bitwise ops
+- **Total tests: 50** (36 unit + 14 integration)
+- **Zero warnings** - Build produces clean output
 
 ---
 

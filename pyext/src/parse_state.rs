@@ -2,6 +2,7 @@
 //!
 //! Implements real wrappers around syntect's ParseState, ScopeStack,
 //! ScopeStackOp, ParseLineOutput, and Scope types.
+#![allow(unused)]
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
@@ -41,6 +42,26 @@ fn parse_output_to_python(output: SyntectParseLineOutput) -> PyParseLineOutput {
         ops,
         replayed,
         warnings: output.warnings,
+    }
+}
+
+fn scope_stack_op_to_string(op: &SyntectScopeStackOp) -> String {
+    match op {
+        SyntectScopeStackOp::Push(s) => format!("Push({})", s.build_string()),
+        SyntectScopeStackOp::Pop(n) => format!("Pop({})", n),
+        SyntectScopeStackOp::Clear(_) => "Clear".to_string(),
+        SyntectScopeStackOp::Restore => "Restore".to_string(),
+        SyntectScopeStackOp::Noop => "Noop".to_string(),
+    }
+}
+
+fn scope_stack_op_type(op: &SyntectScopeStackOp) -> &'static str {
+    match op {
+        SyntectScopeStackOp::Push(_) => "Push",
+        SyntectScopeStackOp::Pop(_) => "Pop",
+        SyntectScopeStackOp::Clear(_) => "Clear",
+        SyntectScopeStackOp::Restore => "Restore",
+        SyntectScopeStackOp::Noop => "Noop",
     }
 }
 
@@ -277,6 +298,36 @@ impl PyParseLineOutput {
         self.ops.clone()
     }
 
+    /// Get the scope stack operation at the given index as a ScopeStackOp object.
+    ///
+    /// Example:
+    /// ```python
+    /// output = parse_state.parse_line("fn main() {", ss)
+    /// for pos, op_str in output.ops:
+    ///     op = output.get_scope_stack_op(i)
+    ///     print(op.op_type)  # 'Push', 'Pop', 'Clear', 'Restore', 'Noop'
+    /// ```
+    pub fn get_scope_stack_op(&self, index: usize) -> PyResult<PyScopeStackOp> {
+        if index >= self.ops.len() {
+            return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                format!("Index {} out of range for ops (length {})", index, self.ops.len())
+            ));
+        }
+        let op_str = &self.ops[index].1;
+        Ok(parse_op_string_to_scope_stack_op(op_str))
+    }
+
+    /// Get the op type (Push, Pop, Clear, Restore, Noop) for the operation at the given index.
+    pub fn get_op_type(&self, index: usize) -> PyResult<String> {
+        if index >= self.ops.len() {
+            return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                format!("Index {} out of range for ops (length {})", index, self.ops.len())
+            ));
+        }
+        let op_str = &self.ops[index].1;
+        Ok(scope_stack_op_type_str(op_str))
+    }
+
     #[getter]
     pub fn replayed(&self) -> Vec<Vec<(usize, String)>> {
         self.replayed.clone()
@@ -295,6 +346,40 @@ impl PyParseLineOutput {
             self.warnings.len()
         )
     }
+}
+
+// Helper: parse op string back to ScopeStackOp
+fn parse_op_string_to_scope_stack_op(op_str: &str) -> PyScopeStackOp {
+    if op_str.starts_with("Push(") && op_str.ends_with(')') {
+        let inner = &op_str[5..op_str.len()-1];
+        if let Ok(scope) = PyScope::new(inner) {
+            return PyScopeStackOp { inner: SyntectScopeStackOp::Push(scope.inner) };
+        }
+    }
+    if op_str.starts_with("Pop(") && op_str.ends_with(')') {
+        if let Ok(n) = op_str[4..op_str.len()-1].parse::<usize>() {
+            return PyScopeStackOp { inner: SyntectScopeStackOp::Pop(n) };
+        }
+    }
+    if op_str == "Clear" {
+        return PyScopeStackOp { inner: SyntectScopeStackOp::Clear(syntect::parsing::ClearAmount::All) };
+    }
+    if op_str == "Restore" {
+        return PyScopeStackOp { inner: SyntectScopeStackOp::Restore };
+    }
+    if op_str == "Noop" {
+        return PyScopeStackOp { inner: SyntectScopeStackOp::Noop };
+    }
+    PyScopeStackOp { inner: SyntectScopeStackOp::Noop }
+}
+
+fn scope_stack_op_type_str(op_str: &str) -> String {
+    if op_str.starts_with("Push(") { return "Push".to_string(); }
+    if op_str.starts_with("Pop(") { return "Pop".to_string(); }
+    if op_str == "Clear" { return "Clear".to_string(); }
+    if op_str == "Restore" { return "Restore".to_string(); }
+    if op_str == "Noop" { return "Noop".to_string(); }
+    "Unknown".to_string()
 }
 
 // ============================================================================

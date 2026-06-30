@@ -203,9 +203,9 @@ impl PyStyle {
 #[pyclass(name = "StyleModifier", from_py_object)]
 #[derive(Clone, PartialEq)]
 pub struct PyStyleModifier {
-    foreground: Option<PyColor>,
-    background: Option<PyColor>,
-    font_style: Option<PyFontStyle>,
+    pub foreground: Option<PyColor>,
+    pub background: Option<PyColor>,
+    pub font_style: Option<PyFontStyle>,
 }
 
 #[pymethods]

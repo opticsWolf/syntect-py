@@ -2,36 +2,70 @@
 //!
 //! Implements real wrappers around syntect's HighlightLines, HighlightState,
 //! and the core highlighting pipeline.
+#![allow(unused)]
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 use syntect::easy::HighlightLines;
-use syntect::highlighting::Style as SyntectStyle;
+
 use crate::syntax_set::{PySyntaxReference, PySyntaxSet};
 use crate::theme_set::{PyTheme, PyThemeSet};
 use crate::style::{PyStyle, PyColor, PyFontStyle};
+use crate::converters::syntect_style_to_py;
+
+
+
 
 
 // ============================================================================
-// Conversion helpers
+// LinesWithEndings helper
 // ============================================================================
 
-fn syntect_style_to_py(style: &SyntectStyle) -> PyStyle {
-    PyStyle {
-        foreground: PyColor {
-            r: style.foreground.r,
-            g: style.foreground.g,
-            b: style.foreground.b,
-            a: style.foreground.a,
-        },
-        background: PyColor {
-            r: style.background.r,
-            g: style.background.g,
-            b: style.background.b,
-            a: style.background.a,
-        },
-        font_style: PyFontStyle { bits: style.font_style.bits() },
+/// Splits content into lines with their ending characters.
+/// Returns a list of (line_content, ending) tuples where ending is one of:
+/// - "\n" (newline)
+/// - "\r\n" (CRLF)
+/// - "\r" (carriage return)
+/// - "" (no ending, last line)
+pub fn split_lines_with_endings(content: &str) -> Vec<(String, String)> {
+    let mut lines = Vec::new();
+    let mut current_line = String::new();
+    let mut i = 0;
+    let chars: Vec<char> = content.chars().collect();
+    let len = chars.len();
+
+    while i < len {
+        let ch = chars[i];
+        match ch {
+            '\n' => {
+                lines.push((current_line.clone(), "\n".to_string()));
+                current_line.clear();
+                i += 1;
+            }
+            '\r' => {
+                if i + 1 < len && chars[i + 1] == '\n' {
+                    lines.push((current_line.clone(), "\r\n".to_string()));
+                    current_line.clear();
+                    i += 2;
+                } else {
+                    lines.push((current_line.clone(), "\r".to_string()));
+                    current_line.clear();
+                    i += 1;
+                }
+            }
+            _ => {
+                current_line.push(ch);
+                i += 1;
+            }
+        }
     }
+
+    // Add remaining content (last line without ending)
+    if !current_line.is_empty() {
+        lines.push((current_line, String::new()));
+    }
+
+    lines
 }
 
 
@@ -194,6 +228,29 @@ impl PyHighlighter {
         }
 
         Ok(all_tokens)
+    }
+
+    /// Highlight all lines in a file, returning tokens for each line.
+    ///
+    /// Auto-detects syntax from the file extension. Returns a list of token
+    /// lists, one per line.
+    ///
+    /// Example:
+    /// ```python
+    /// tokens = hl.highlight_file("/path/to/file.rs", ss, ts)
+    /// for line_tokens in tokens:
+    ///     for style, text in line_tokens:
+    ///         print(style.foreground, text)
+    /// ```
+    pub fn highlight_file(&self, path: &str, syntax_set: &PySyntaxSet, theme_set: &PyThemeSet) -> PyResult<Vec<Vec<(PyStyle, String)>>> {
+        // Read the file
+        let content = match std::fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(e) => return Err(PyErr::new::<PyValueError, _>(format!("Failed to read file '{}': {}", path, e))),
+        };
+
+        // Use the highlight_lines method
+        self.highlight_lines(&content, syntax_set, theme_set)
     }
 
     /// Save the current highlighting state for incremental highlighting.

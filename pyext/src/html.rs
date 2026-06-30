@@ -11,7 +11,7 @@ use syntect::html::{
 use syntect::parsing::Scope as SyntectScope;
 use crate::syntax_set::{PySyntaxReference, PySyntaxSet};
 use crate::theme_set::{PyTheme, PyThemeSet};
-use crate::style::{PyStyle, PyColor};
+use crate::style::PyStyle;
 
 
 #[pyclass(name = "ClassStyle")]
@@ -112,25 +112,21 @@ pub fn css_for_theme(theme: &PyTheme, class_style: &str) -> PyResult<String> {
         let mut style = syntect::highlighting::StyleModifier::default();
 
         if let Some(fg) = item.foreground() {
-            if let Ok(color) = PyColor::from_hex(&fg) {
-                style.foreground = Some(syntect::highlighting::Color {
-                    r: color.r(),
-                    g: color.g(),
-                    b: color.b(),
-                    a: color.a(),
-                });
-            }
+            style.foreground = Some(syntect::highlighting::Color {
+                r: fg.r(),
+                g: fg.g(),
+                b: fg.b(),
+                a: fg.a(),
+            });
         }
 
         if let Some(bg) = item.background() {
-            if let Ok(color) = PyColor::from_hex(&bg) {
-                style.background = Some(syntect::highlighting::Color {
-                    r: color.r(),
-                    g: color.g(),
-                    b: color.b(),
-                    a: color.a(),
-                });
-            }
+            style.background = Some(syntect::highlighting::Color {
+                r: bg.r(),
+                g: bg.g(),
+                b: bg.b(),
+                a: bg.a(),
+            });
         }
 
         let fs = item.font_style();
@@ -321,4 +317,27 @@ fn parse_scope_selectors(scope_str: &str) -> syntect::highlighting::ScopeSelecto
     syntect::highlighting::ScopeSelectors {
         selectors,
     }
+}
+
+
+// ============================================================================
+// Alias functions for API compatibility
+// ============================================================================
+
+/// Alias for css_for_theme - generates CSS for a theme.
+#[pyfunction]
+pub fn generate_css(theme: &PyTheme, class_style: &str) -> PyResult<String> {
+    css_for_theme(theme, class_style)
+}
+
+/// Alias for highlighted_html_for_string_py - creates full highlighted HTML.
+#[pyfunction]
+pub fn create_html_file(
+    code: &str,
+    syntax_ref: &PySyntaxReference,
+    theme: &PyTheme,
+    syntax_set: &PySyntaxSet,
+    theme_set: &PyThemeSet,
+) -> PyResult<String> {
+    highlighted_html_for_string_py(code, syntax_ref, theme, syntax_set, theme_set, "if_different", 1)
 }

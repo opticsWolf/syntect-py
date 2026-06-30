@@ -79,7 +79,9 @@ fn syntect(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(util::as_html, m)?)?;
     m.add_function(wrap_pyfunction!(util::as_latex_escaped, m)?)?;
     m.add_function(wrap_pyfunction!(html::css_for_theme, m)?)?;
+    m.add_function(wrap_pyfunction!(html::generate_css, m)?)?;
     m.add_function(wrap_pyfunction!(html::highlighted_html_for_string_py, m)?)?;
+    m.add_function(wrap_pyfunction!(html::create_html_file, m)?)?;
     m.add_function(wrap_pyfunction!(html::highlighted_html_at_line_and_column_number, m)?)?;
 
     // Dump utilities

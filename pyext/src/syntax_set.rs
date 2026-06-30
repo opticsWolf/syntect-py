@@ -263,6 +263,27 @@ impl PySyntaxSet {
         }).collect()
     }
 
+    /// Create a SyntaxSet from a .packdump file.
+    #[staticmethod]
+    pub fn from_dump(path: &str) -> PyResult<PySyntaxSet> {
+        match syntect::dumps::from_dump_file::<syntect::parsing::SyntaxSet, &str>(path) {
+            Ok(ss) => Ok(PySyntaxSet { inner: ss }),
+            Err(e) => Err(PyErr::new::<pyo3::exceptions::PyOSError, _>(
+                format!("Failed to load syntax dump: {}", e),
+            )),
+        }
+    }
+
+    /// Save this SyntaxSet to a .packdump file.
+    pub fn to_dump(&self, path: &str) -> PyResult<()> {
+        match syntect::dumps::dump_to_file(&self.inner, path) {
+            Ok(()) => Ok(()),
+            Err(e) => Err(PyErr::new::<pyo3::exceptions::PyOSError, _>(
+                format!("Failed to save syntax dump: {}", e),
+            )),
+        }
+    }
+
     pub fn __repr__(&self) -> String {
         format!("SyntaxSet(syntaxes={})", self.inner.syntaxes().len())
     }

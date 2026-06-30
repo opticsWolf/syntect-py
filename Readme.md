@@ -3,7 +3,7 @@
 > High-quality syntax highlighting for Python using Sublime Text grammars, powered by the [syntect](https://github.com/trishume/syntect) Rust crate.
 > PyO3 0.29 · Python ≥ 3.9 · Pure Rust regex (no C dependencies)
 
-[![Tests](https://img.shields.io/badge/tests-230_passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-258_passing-brightgreen)]()
 [![Python](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)]()
 [![PyO3](https://img.shields.io/badge/pyo3-0.29-orange)]()
 
@@ -20,7 +20,7 @@
 - **Serialization** — dump/load syntax sets and themes as binary `.packdump`/`.themedump` files
 - **Zero C dependencies** — uses `regex-fancy` (pure Rust), no Oniguruma
 - **Full type stubs** — comprehensive `.pyi` stubs for IDE autocomplete and type checking
-- **230 tests** — covering all phases of the bindings implementation
+- **258 tests** — covering all 29 implementation phases (Phases 11–29)
 
 ---
 
@@ -341,7 +341,7 @@ cd pyext
 python -m pytest tests/ -v
 ```
 
-230 tests covering all 16 implementation phases (Phases 11–26).
+258 tests covering all 29 implementation phases (Phases 11–29).
 
 ---
 
@@ -356,4 +356,4 @@ python -m pytest tests/ -v
 
 ---
 
-*All 230 tests passing · Zero compiler warnings · PyO3 0.29 · Python ≥ 3.9*
+*All 258 tests passing · Zero compiler warnings · PyO3 0.29 · Python ≥ 3.9 · Stage 3 complete*

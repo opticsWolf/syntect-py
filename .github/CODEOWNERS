@@ -1,0 +1,28 @@
+# Code owners for syntect-py
+# Each line follows the pattern: * path/to/codeowner
+
+# Core highlighting modules
+pyext/src/highlighter.rs @syntect-py/maintainers
+pyext/src/convenience.rs @syntect-py/maintainers
+pyext/src/parse_state.rs @syntect-py/maintainers
+
+# Theme and style modules
+pyext/src/theme_set.rs @syntect-py/maintainers
+pyext/src/style.rs @syntect-py/maintainers
+
+# HTML and output modules
+pyext/src/html.rs @syntect-py/maintainers
+pyext/src/util.rs @syntect-py/maintainers
+
+# Syntax and dump modules
+pyext/src/syntax_set.rs @syntect-py/maintainers
+pyext/src/dumps.rs @syntect-py/maintainers
+
+# Tests
+pyext/tests/ @syntect-py/maintainers
+
+# Documentation
+*.md @syntect-py/maintainers
+
+# CI/CD
+.github/workflows/ @syntect-py/maintainers

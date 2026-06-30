@@ -216,7 +216,8 @@ pyext/
 │   └── errors.rs       # LoadingError, ParsingError, DumpError, ParseSyntaxError,
 │                         # loading_error_to_string, dump_error_to_string
 ├── examples/           # 9 example scripts
-└── tests/              # 230 tests across 15 test files
+├── tests/              # 258+ tests across 15 test files
+└── mypy.ini            # mypy type checking configuration
 ```
 
 ---
@@ -350,4 +351,4 @@ Combine with `|`: `FontStyle.BOLD | FontStyle.ITALIC` → bits = 5
 
 ---
 
-*Generated: 2026-06-30 · All 230 tests passing · Zero compiler warnings*
+*Generated: 2026-06-30 · 258 tests passing · Zero compiler warnings · Stage 3 (Phases 26-29) complete · All 29 phases done*

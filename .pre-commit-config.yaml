@@ -1,0 +1,70 @@
+# Pre-commit hooks for syntect-py
+# Install: pip install pre-commit && pre-commit install
+# Run: pre-commit run --all-files
+
+repos:
+  # Python code formatting
+  - repo: https://github.com/psf/black
+    rev: 24.3.0
+    hooks:
+      - id: black
+        language_version: python3
+        args: ["--line-length", "100"]
+
+  # Import sorting
+  - repo: https://github.com/PyCQA/isort
+    rev: 6.0.0
+    hooks:
+      - id: isort
+        language_version: python3
+        args: ["--line-length", "100", "--known-first-party", "syntect"]
+
+  # Unused imports
+  - repo: https://github.com/PyCQA/flake8
+    rev: 10.3.0
+    hooks:
+      - id: flake8
+        language_version: python3
+        args: ["--line-length", "100"]
+
+  # Type checking
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.10.0
+    hooks:
+      - id: mypy
+        name: mypy (pyext)
+        args: ["--config-file", "pyext/mypy.ini", "pyext/"]
+        exclude: "^(?!pyext/).*"
+      - id: mypy
+        name: mypy (tests)
+        args: ["--config-file", "pyext/mypy.ini", "pyext/tests/"]
+        exclude: "^(?!pyext/tests/).*"
+        pass_filenames: false
+        additional_dependencies:
+          - types-setuptools
+
+  # Rust formatting
+  - repo: https://github.com/drivergate/pre-commit-rustfmt
+    rev: v1.0.1
+    hooks:
+      - id: rustfmt
+        args: ["--manifest-path", "pyext/Cargo.toml"]
+
+  # Markdown formatting
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 0.7.14
+    hooks:
+      - id: mdformat
+        additional_dependencies:
+          - mdformat-gfm
+          - mdformat-tables
+
+  # Trailing whitespace
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml

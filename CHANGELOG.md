@@ -49,6 +49,22 @@ All notable changes will be documented in this file.
 - `as_html`, `as_terminal_escaped`, `as_latex_escaped` deduplicated into shared implementations
 - Empty string early returns in all highlighting functions
 
+### Performance
+- `split_lines_with_endings` optimized (no `Vec<char>` allocation)
+- `HighlightLines` stores owned `SyntaxReference` clone
+- `as_html`, `as_terminal_escaped`, `as_latex_escaped` deduplicated into shared implementations
+- Empty string early returns in all highlighting functions
+
+### Maintenance
+- Pre-commit hooks: black, isort, flake8, mypy, rustfmt, mdformat, pre-commit-hooks
+- mypy type checking configuration (`pyext/mypy.ini`)
+- Dev dependency group (`pytest`, `mypy`, `black`, `isort`, `flake8`, `pre-commit`)
+- Makefile targets: `test`, `lint`, `format`, `precommit`, `benchmark`, `build`
+- GitHub issue templates: bug report, feature request, question
+- GitHub PR template with testing and code review checklists
+- GitHub CODEOWNERS file with module-level ownership
+- CHANGELOG.md maintained in Keep a Changelog format
+
 ### Security
 - Uses `regex-fancy` (pure Rust) instead of `regex-onig` (Oniguruma C library)
 - No unsafe code paths exposed to Python

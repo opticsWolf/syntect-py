@@ -36,3 +36,25 @@ update-known-failures: $(SUBMODULES)
 
 update-known-failures-fancy: $(SUBMODULES)
 	cargo run --features default-fancy --no-default-features --release --example syntest -- testdata/Packages testdata/Packages --summary | tee testdata/known_syntest_failures_fancy.txt
+
+# Python targets
+.PHONY: test lint format precommit benchmark build
+
+test:
+	cd pyext && $(PYTEST) tests/ -v --tb=short
+
+lint:
+	cd pyext && $(MYPY) syntect.pyi --ignore-missing-imports
+
+format:
+	cd pyext && $(BLACK) --line-length 100 src/ examples/ tests/
+	cd pyext && $(ISORT) --line-length 100 src/ examples/ tests/
+
+precommit:
+	pre-commit run --all-files
+
+benchmark:
+	cd pyext && $(PYTHON) examples/benchmark.py --iterations 100
+
+build:
+	cd pyext && maturin build --release

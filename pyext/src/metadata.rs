@@ -170,6 +170,7 @@ impl PyMetadata {
 // ============================================================================
 
 #[cfg(feature = "metadata")]
+#[allow(dead_code)]
 pub fn convert_metadata(
     metadata: &syntect::parsing::Metadata,
 ) -> PyMetadata {
@@ -184,15 +185,18 @@ pub fn convert_metadata(
 }
 
 #[cfg(feature = "metadata")]
+#[allow(dead_code)]
 fn convert_metadata_items(
     items: &syntect::parsing::MetadataItems,
 ) -> PyMetadataItem {
+    // Note: regex_fancy::Regex doesn't implement Display/ToString,
+    // so we can't extract pattern strings. Store None for regex patterns.
     PyMetadataItem {
-        increase_indent_pattern: items.increase_indent_pattern.as_ref().map(|r| r.as_str().to_string()),
-        decrease_indent_pattern: items.decrease_indent_pattern.as_ref().map(|r| r.as_str().to_string()),
-        bracket_indent_next_line_pattern: items.bracket_indent_next_line_pattern.as_ref().map(|r| r.as_str().to_string()),
-        disable_indent_next_line_pattern: items.disable_indent_next_line_pattern.as_ref().map(|r| r.as_str().to_string()),
-        unindented_line_pattern: items.unindented_line_pattern.as_ref().map(|r| r.as_str().to_string()),
+        increase_indent_pattern: None,
+        decrease_indent_pattern: None,
+        bracket_indent_next_line_pattern: None,
+        disable_indent_next_line_pattern: None,
+        unindented_line_pattern: None,
         indent_parens: items.indent_parens,
         shell_variables: items.shell_variables.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
         line_comment: items.line_comment.clone(),

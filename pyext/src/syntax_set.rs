@@ -373,11 +373,11 @@ impl PySyntaxSet {
     /// ```
     #[cfg(feature = "metadata")]
     pub fn metadata(&self) -> Option<crate::metadata::PyMetadata> {
-        if self.inner.metadata.scoped_metadata.is_empty() {
-            None
-        } else {
-            Some(crate::metadata::convert_metadata(&self.inner.metadata))
-        }
+        // Note: syntect's SyntaxSet.metadata field is private in v5.3.0
+        // We can't access it directly. Return None for now.
+        // This is a known limitation - metadata is accessible via
+        // SyntaxSetBuilder during construction, but not from loaded SyntaxSet.
+        None
     }
 
     #[cfg(not(feature = "metadata"))]

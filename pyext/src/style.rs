@@ -4,20 +4,8 @@ use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 use syntect::highlighting::{Color, FontStyle, Style, StyleModifier};
 
-// ============================================================================
-// PyColor
-// ============================================================================
-
-/// A color in RGBA format.
-///
-/// Example:
-/// ```python
-/// c = syntect.Color(255, 0, 0, 255)  # Red
-/// c = syntect.Color.from_hex("#FF0000")  # Red from hex
-/// hex = c.to_hex()  # "#FF0000"
-/// ```
 #[pyclass(name = "Color")]
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct PyColor {
     pub r: u8,
     pub g: u8,
@@ -27,6 +15,26 @@ pub struct PyColor {
 
 #[pymethods]
 impl PyColor {
+    #[getter]
+    pub fn r(&self) -> u8 {
+        self.r
+    }
+
+    #[getter]
+    pub fn g(&self) -> u8 {
+        self.g
+    }
+
+    #[getter]
+    pub fn b(&self) -> u8 {
+        self.b
+    }
+
+    #[getter]
+    pub fn a(&self) -> u8 {
+        self.a
+    }
+
     #[new]
     pub fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
         PyColor { r, g, b, a }
@@ -65,24 +73,19 @@ impl PyColor {
     }
 }
 
-// ============================================================================
-// PyFontStyle
-// ============================================================================
-
-/// Font style flags (bold, italic, underline).
-///
-/// Supports bitwise operations:
-/// ```python
-/// style = syntect.FontStyle.BOLD | syntect.FontStyle.ITALIC
-/// ```
 #[pyclass(name = "FontStyle")]
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct PyFontStyle {
     pub bits: u8,
 }
 
 #[pymethods]
 impl PyFontStyle {
+    #[getter]
+    pub fn bits(&self) -> u8 {
+        self.bits
+    }
+
     #[new]
     pub fn new(bits: u8) -> Self {
         PyFontStyle { bits }
@@ -135,13 +138,8 @@ impl PyFontStyle {
     }
 }
 
-// ============================================================================
-// PyStyle
-// ============================================================================
-
-/// A style combining foreground/background colors and font style.
 #[pyclass(name = "Style")]
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct PyStyle {
     pub foreground: PyColor,
     pub background: PyColor,
@@ -159,13 +157,26 @@ impl PyStyle {
         PyStyle { foreground, background, font_style }
     }
 
+    #[getter]
+    pub fn foreground(&self) -> PyColor {
+        self.foreground.clone()
+    }
+
+    #[getter]
+    pub fn background(&self) -> PyColor {
+        self.background.clone()
+    }
+
+    #[getter]
+    pub fn font_style(&self) -> PyFontStyle {
+        self.font_style.clone()
+    }
+
     pub fn __repr__(&self) -> String {
-        format!(
-            "Style(fg={}, bg={}, style={})",
+        format!("Style(fg={}, bg={}, style={})",
             self.foreground.to_hex(),
             self.background.to_hex(),
-            self.font_style.bits
-        )
+            self.font_style.bits)
     }
 
     pub fn __eq__(&self, other: &PyStyle) -> bool {
@@ -177,15 +188,21 @@ impl PyStyle {
         self.background.b == other.background.b &&
         self.font_style.bits == other.font_style.bits
     }
+
+    #[staticmethod]
+    pub fn from_hex_styles(fg_hex: &str, bg_hex: &str, font_bits: u8) -> PyResult<PyStyle> {
+        let fg = PyColor::from_hex(fg_hex)?;
+        let bg = PyColor::from_hex(bg_hex)?;
+        Ok(PyStyle {
+            foreground: fg,
+            background: bg,
+            font_style: PyFontStyle { bits: font_bits },
+        })
+    }
 }
 
-// ============================================================================
-// PyStyleModifier
-// ============================================================================
-
-/// A partial style change (some fields may be None).
 #[pyclass(name = "StyleModifier")]
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct PyStyleModifier {
     foreground: Option<PyColor>,
     background: Option<PyColor>,

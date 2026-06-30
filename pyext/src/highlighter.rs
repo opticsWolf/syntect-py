@@ -19,9 +19,19 @@ use crate::style::{PyStyle, PyColor, PyFontStyle};
 
 fn syntect_style_to_py(style: &SyntectStyle) -> PyStyle {
     PyStyle {
-        foreground: syntect_color_to_py(&style.foreground),
-        background: syntect_color_to_py(&style.background),
-        font_style: syntect_font_style_to_py(style.font_style),
+        foreground: PyColor {
+            r: style.foreground.r,
+            g: style.foreground.g,
+            b: style.foreground.b,
+            a: style.foreground.a,
+        },
+        background: PyColor {
+            r: style.background.r,
+            g: style.background.g,
+            b: style.background.b,
+            a: style.background.a,
+        },
+        font_style: PyFontStyle { bits: style.font_style.bits() },
     }
 }
 
@@ -38,44 +48,8 @@ fn syntect_font_style_to_py(fs: syntect::highlighting::FontStyle) -> PyFontStyle
     PyFontStyle { bits: fs.bits() }
 }
 
-// ============================================================================
-// PyHighlightResult (convenience wrapper)
-// ============================================================================
 
-/// Result of highlighting a string, containing tokens, HTML, and terminal output.
-#[pyclass(name = "HighlightResult")]
-pub struct PyHighlightResult {
-    tokens: Vec<(String, String)>,
-    html: String,
-    terminal_escaped: String,
-}
 
-#[pymethods]
-impl PyHighlightResult {
-    #[getter]
-    pub fn tokens(&self) -> Vec<(String, String)> {
-        self.tokens.clone()
-    }
-
-    #[getter]
-    pub fn html(&self) -> String {
-        self.html.clone()
-    }
-
-    #[getter]
-    pub fn terminal_escaped(&self) -> String {
-        self.terminal_escaped.clone()
-    }
-
-    pub fn __repr__(&self) -> String {
-        format!(
-            "HighlightResult(tokens={}, html_len={}, terminal_len={})",
-            self.tokens.len(),
-            self.html.len(),
-            self.terminal_escaped.len()
-        )
-    }
-}
 
 // ============================================================================
 // PyHighlightState (real wrapper around syntect::highlighting::HighlightState)
@@ -116,6 +90,7 @@ impl PyHighlightState {
     }
 }
 
+
 // ============================================================================
 // PyHighlighter (real implementation)
 // ============================================================================
@@ -125,7 +100,8 @@ impl PyHighlightState {
 /// Example:
 /// ```python
 /// hl = syntect.Highlighter(rust, theme)
-/// tokens = hl.highlight_line("fn main() {", ss)
+/// tokens = hl.highlight_line("fn main() {", ss, ts)
+/// # Returns: [(PyStyle, "fn"), (PyStyle, " "), (PyStyle, "main"), ...]
 /// ```
 #[pyclass(name = "Highlighter")]
 pub struct PyHighlighter {
@@ -150,11 +126,17 @@ impl PyHighlighter {
         }
     }
 
-    /// Highlight a single line, returning tokens of (style_string, text).
+    /// Highlight a single line, returning tokens of (style, text).
     ///
-    /// The tokens include the syntect Style debug representation as the style string,
-    /// which contains the foreground/background colors and font style.
-    pub fn highlight_line(&self, line: &str, syntax_set: &PySyntaxSet, theme_set: &PyThemeSet) -> PyResult<Vec<(String, String)>> {
+    /// The style is a real PyStyle object with foreground, background, and font_style.
+    ///
+    /// Example:
+    /// ```python
+    /// tokens = hl.highlight_line("fn main() {", ss, ts)
+    /// for style, text in tokens:
+    ///     print(style.foreground, text)
+    /// ```
+    pub fn highlight_line(&self, line: &str, syntax_set: &PySyntaxSet, theme_set: &PyThemeSet) -> PyResult<Vec<(PyStyle, String)>> {
         let syntax_ref = syntax_set.inner.find_syntax_by_name(&self.syntax_name)
             .ok_or_else(|| PyErr::new::<PyValueError, _>(
                 format!("Syntax not found: {}", self.syntax_name)
@@ -168,13 +150,8 @@ impl PyHighlighter {
         let mut highlighter = HighlightLines::new(syntax_ref, real_theme);
         match highlighter.highlight_line(line, &syntax_set.inner) {
             Ok(ranges) => {
-                let tokens: Vec<(String, String)> = ranges.iter().map(|(style, text)| {
-                    let py_style = syntect_style_to_py(style);
-                    (format!("Style(fg={}, bg={}, font={})",
-                        py_style.foreground.to_hex(),
-                        py_style.background.to_hex(),
-                        py_style.font_style.bits),
-                     text.to_string())
+                let tokens: Vec<(PyStyle, String)> = ranges.iter().map(|(style, text)| {
+                    (syntect_style_to_py(style), text.to_string())
                 }).collect();
                 Ok(tokens)
             }
@@ -185,7 +162,9 @@ impl PyHighlighter {
     }
 
     /// Highlight all lines in the code, returning tokens for each line.
-    pub fn highlight_lines(&self, code: &str, syntax_set: &PySyntaxSet, theme_set: &PyThemeSet) -> PyResult<Vec<Vec<(String, String)>>> {
+    ///
+    /// Returns a list of token lists, one per line.
+    pub fn highlight_lines(&self, code: &str, syntax_set: &PySyntaxSet, theme_set: &PyThemeSet) -> PyResult<Vec<Vec<(PyStyle, String)>>> {
         let syntax_ref = syntax_set.inner.find_syntax_by_name(&self.syntax_name)
             .ok_or_else(|| PyErr::new::<PyValueError, _>(
                 format!("Syntax not found: {}", self.syntax_name)
@@ -197,23 +176,25 @@ impl PyHighlighter {
             ))?;
 
         let mut highlighter = HighlightLines::new(syntax_ref, real_theme);
-        let mut all_tokens: Vec<Vec<(String, String)>> = Vec::new();
+        let mut all_tokens: Vec<Vec<(PyStyle, String)>> = Vec::new();
 
         for line in code.split('\n') {
             match highlighter.highlight_line(line, &syntax_set.inner) {
                 Ok(ranges) => {
-                    let tokens: Vec<(String, String)> = ranges.iter().map(|(style, text)| {
-                        let py_style = syntect_style_to_py(style);
-                        (format!("Style(fg={}, bg={}, font={})",
-                            py_style.foreground.to_hex(),
-                            py_style.background.to_hex(),
-                            py_style.font_style.bits),
-                         text.to_string())
+                    let tokens: Vec<(PyStyle, String)> = ranges.iter().map(|(style, text)| {
+                        (syntect_style_to_py(style), text.to_string())
                     }).collect();
                     all_tokens.push(tokens);
                 }
                 Err(_) => {
-                    all_tokens.push(vec![("Style(fg=0, bg=0, font=0)".to_string(), line.to_string())]);
+                    all_tokens.push(vec![(
+                        PyStyle {
+                            foreground: PyColor { r: 0, g: 0, b: 0, a: 0 },
+                            background: PyColor { r: 0, g: 0, b: 0, a: 0 },
+                            font_style: PyFontStyle { bits: 0 },
+                        },
+                        line.to_string()
+                    )]);
                 }
             }
         }
@@ -256,9 +237,10 @@ impl PyHighlighter {
     }
 
     pub fn __repr__(&self) -> String {
-        "Highlighter()".to_string()
+        format!("Highlighter(syntax='{}', theme='{}')", self.syntax_name, self.theme_name)
     }
 }
+
 
 // ============================================================================
 // highlight_string (high-level convenience function)
@@ -266,13 +248,20 @@ impl PyHighlighter {
 
 /// High-level function to highlight a string with auto-loading of syntax/theme.
 ///
+/// Returns a HighlightResult with tokens (real PyStyle objects), HTML, and
+/// terminal escape output.
+///
 /// Example:
 /// ```python
 /// result = syntect.highlight_string(
 ///     code="fn main() {}",
 ///     syntax="Rust",
-///     theme="base16-ocean.dark"
+///     theme="base16-ocean.dark",
+///     syntax_set=ss,
+///     theme_set=ts
 /// )
+/// for style, text in result.tokens:
+///     print(style.foreground, text)
 /// print(result.html)
 /// ```
 #[pyfunction]
@@ -282,7 +271,7 @@ pub fn highlight_string(
     theme_name: &str,
     syntax_set: &PySyntaxSet,
     theme_set: &PyThemeSet,
-) -> PyResult<PyHighlightResult> {
+) -> PyResult<crate::convenience::PyHighlightResult> {
     // Find the syntax and theme
     let syntax_ref = syntax_set.inner.find_syntax_by_name(syntax_name)
         .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>(
@@ -298,33 +287,35 @@ pub fn highlight_string(
     let mut highlighter = HighlightLines::new(syntax_ref, theme);
 
     // Highlight all lines
-    let mut all_tokens: Vec<(String, String)> = Vec::new();
+    let mut all_tokens: Vec<(PyStyle, String)> = Vec::new();
     for line in code.split('\n') {
         match highlighter.highlight_line(line, &syntax_set.inner) {
             Ok(ranges) => {
-                let tokens: Vec<(String, String)> = ranges.iter().map(|(style, text)| {
-                    let py_style = syntect_style_to_py(style);
-                    (format!("Style(fg={}, bg={}, font={})",
-                        py_style.foreground.to_hex(),
-                        py_style.background.to_hex(),
-                        py_style.font_style.bits),
-                     text.to_string())
-                }).collect();
-                all_tokens.extend(tokens);
+                for (style, text) in ranges {
+                    all_tokens.push((syntect_style_to_py(&style), text.to_string()));
+                }
             }
             Err(_) => {
-                all_tokens.push(("Style(fg=0, bg=0, font=0)".to_string(), line.to_string()));
+                all_tokens.push((
+                    PyStyle {
+                        foreground: PyColor { r: 0, g: 0, b: 0, a: 0 },
+                        background: PyColor { r: 0, g: 0, b: 0, a: 0 },
+                        font_style: PyFontStyle { bits: 0 },
+                    },
+                    line.to_string()
+                ));
             }
         }
     }
 
-    // Generate HTML (simplified)
-    let html = format!("<pre><code>{}</code></pre>", code.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;"));
+    // Generate HTML using syntect's real function
+    let html = syntect::html::highlighted_html_for_string(code, &syntax_set.inner, syntax_ref, theme)
+        .unwrap_or_else(|_| format!("<pre><code>{}</code></pre>", code.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")));
 
     // Generate terminal escaped (simplified)
     let terminal_escaped = code.to_string();
 
-    Ok(PyHighlightResult {
+    Ok(crate::convenience::PyHighlightResult {
         tokens: all_tokens,
         html,
         terminal_escaped,

@@ -6,6 +6,7 @@
 use pyo3::prelude::*;
 
 mod converters;
+mod convenience;
 mod dumps;
 mod errors;
 mod highlighter;
@@ -62,7 +63,7 @@ fn syntect(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Highlighting engine
     m.add_class::<highlighter::PyHighlighter>()?;
     m.add_class::<highlighter::PyHighlightState>()?;
-    m.add_class::<highlighter::PyHighlightResult>()?;
+    m.add_class::<convenience::PyHighlightResult>()?;
 
     // Parsing
     m.add_class::<parse_state::PyParseState>()?;
@@ -72,11 +73,13 @@ fn syntect(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<parse_state::PyScope>()?;
 
     // Output utilities
+    m.add_class::<html::PyClassStyle>()?;
+    m.add_class::<html::PyIncludeBg>()?;
     m.add_function(wrap_pyfunction!(util::as_terminal_escaped, m)?)?;
     m.add_function(wrap_pyfunction!(util::as_html, m)?)?;
     m.add_function(wrap_pyfunction!(util::as_latex_escaped, m)?)?;
     m.add_function(wrap_pyfunction!(html::css_for_theme, m)?)?;
-    m.add_function(wrap_pyfunction!(html::highlighted_html_for_string, m)?)?;
+    m.add_function(wrap_pyfunction!(html::highlighted_html_for_string_py, m)?)?;
     m.add_function(wrap_pyfunction!(html::highlighted_html_at_line_and_column_number, m)?)?;
 
     // Dump utilities

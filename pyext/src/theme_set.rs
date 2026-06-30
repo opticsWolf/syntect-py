@@ -8,7 +8,6 @@ use crate::errors;
 // PyThemeSettings (read-only wrapper)
 // ============================================================================
 
-/// Theme settings containing default colors and gutter settings.
 #[pyclass(name = "ThemeSettings")]
 #[derive(Clone)]
 pub struct PyThemeSettings {
@@ -58,11 +57,13 @@ impl PyThemeSettings {
 // PyThemeItem
 // ============================================================================
 
-/// A single theme rule mapping scopes to styles.
 #[pyclass(name = "ThemeItem")]
 #[derive(Clone)]
 pub struct PyThemeItem {
     scope: String,
+    foreground: Option<String>,
+    background: Option<String>,
+    font_style: u8,
     style_modifier: String,
 }
 
@@ -74,12 +75,28 @@ impl PyThemeItem {
     }
 
     #[getter]
+    pub fn foreground(&self) -> Option<String> {
+        self.foreground.clone()
+    }
+
+    #[getter]
+    pub fn background(&self) -> Option<String> {
+        self.background.clone()
+    }
+
+    #[getter]
+    pub fn font_style(&self) -> u8 {
+        self.font_style
+    }
+
+    #[getter]
     pub fn style_modifier(&self) -> String {
         self.style_modifier.clone()
     }
 
     pub fn __repr__(&self) -> String {
-        format!("ThemeItem(scope='{}', style='{}')", self.scope, self.style_modifier)
+        format!("ThemeItem(scope='{}', fg={:?}, bg={:?}, font={})",
+            self.scope, self.foreground, self.background, self.font_style)
     }
 }
 
@@ -87,7 +104,6 @@ impl PyThemeItem {
 // PyTheme (read-only wrapper)
 // ============================================================================
 
-/// A syntax highlighting theme.
 #[pyclass(name = "Theme")]
 #[derive(Clone)]
 pub struct PyTheme {
@@ -134,14 +150,6 @@ impl PyTheme {
 // PyThemeSet
 // ============================================================================
 
-/// A set of loaded themes.
-///
-/// Example:
-/// ```python
-/// ts = syntect.ThemeSet.load_defaults()
-/// theme = ts.get_theme("base16-ocean.dark")
-/// print(ts.theme_names())
-/// ```
 #[pyclass(name = "ThemeSet")]
 pub struct PyThemeSet {
     pub inner: SyntectThemeSet,
@@ -159,19 +167,9 @@ impl PyThemeSet {
         PyThemeSet { inner: SyntectThemeSet::load_defaults() }
     }
 
-    /// Load all `.tmTheme` files from a folder into this theme set.
-    ///
-    /// Example:
-    /// ```python
-    /// ts = syntect.ThemeSet.load_defaults()
-    /// warnings = ts.add_from_folder("/path/to/themes")
-    /// print(ts.theme_names())
-    /// ```
     pub fn add_from_folder(&mut self, path: &str) -> PyResult<Vec<String>> {
-        // Collect warnings during loading
         match SyntectThemeSet::load_from_folder(path) {
             Ok(loaded) => {
-                // Merge loaded themes into self
                 for (name, theme) in loaded.themes {
                     self.inner.themes.insert(name, theme);
                 }
@@ -183,14 +181,6 @@ impl PyThemeSet {
         }
     }
 
-    /// Create a builder to load themes from disk.
-    ///
-    /// Example:
-    /// ```python
-    /// builder = syntect.ThemeSetBuilder()
-    /// builder.add_from_folder("/path/to/themes")
-    /// ts = builder.build()
-    /// ```
     #[staticmethod]
     pub fn builder() -> PyResult<PyThemeSet> {
         Ok(PyThemeSet { inner: SyntectThemeSet::new() })
@@ -210,8 +200,13 @@ impl PyThemeSet {
                     gutter_background: t.settings.gutter.as_ref().map(|c| format!("#{:02X}{:02X}{:02X}", c.r, c.g, c.b)),
                 },
                 scopes: t.scopes.iter().map(|s| {
+                    let fg_hex = s.style.foreground.as_ref().map(|c| format!("#{:02X}{:02X}{:02X}", c.r, c.g, c.b));
+                    let bg_hex = s.style.background.as_ref().map(|c| format!("#{:02X}{:02X}{:02X}", c.r, c.g, c.b));
                     PyThemeItem {
                         scope: format!("{:?}", s.scope),
+                        foreground: fg_hex,
+                        background: bg_hex,
+                        font_style: s.style.font_style.map_or(0, |fs| fs.bits()),
                         style_modifier: format!("{:?}", s.style),
                     }
                 }).collect(),

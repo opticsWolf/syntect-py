@@ -1,72 +1,234 @@
 //! Python bindings for syntect's HTML output utilities.
 
 use pyo3::prelude::*;
+use pyo3::exceptions::PyValueError;
+use syntect::easy::HighlightLines;
+use syntect::html::{
+    ClassStyle as SyntectClassStyle,
+    css_for_theme_with_class_style,
+    start_highlighted_html_snippet,
+};
+use crate::syntax_set::{PySyntaxReference, PySyntaxSet};
+use crate::theme_set::{PyTheme, PyThemeSet};
+use crate::style::PyStyle;
 
-// ============================================================================
-// css_for_theme (stub)
-// ============================================================================
 
-/// Generate CSS for a theme.
-///
-/// Example:
-/// ```python
-/// css = syntect.css_for_theme(theme, "spaced")
-/// ```
-#[pyfunction]
-pub fn css_for_theme(theme_name: &str, class_style: &str) -> String {
-    format!(
-        "/* CSS for theme: {} */\n/* class_style: {} */",
-        theme_name, class_style
-    )
+#[pyclass(name = "ClassStyle")]
+pub struct PyClassStyle {
+    kind: usize,
 }
 
-// ============================================================================
-// highlighted_html_for_string (stub)
-// ============================================================================
+#[pymethods]
+impl PyClassStyle {
+    #[new]
+    pub fn new(kind: &str) -> Self {
+        match kind {
+            "spaced" => PyClassStyle { kind: 0 },
+            "spaced_prefixed" => PyClassStyle { kind: 1 },
+            "class_attribute" => PyClassStyle { kind: 2 },
+            _ => PyClassStyle { kind: 0 },
+        }
+    }
 
-/// Generate highlighted HTML for a string.
-///
-/// Example:
-/// ```python
-/// html = syntect.highlighted_html_for_string(code, syntax, theme, ss)
-/// ```
+    #[staticmethod]
+    pub fn spaced() -> PyClassStyle {
+        PyClassStyle { kind: 0 }
+    }
+
+    #[staticmethod]
+    pub fn spaced_prefixed(_prefix: &str) -> PyResult<PyClassStyle> {
+        Ok(PyClassStyle { kind: 1 })
+    }
+
+    #[staticmethod]
+    pub fn class_attribute() -> PyClassStyle {
+        PyClassStyle { kind: 2 }
+    }
+
+    pub fn __repr__(&self) -> String {
+        match self.kind {
+            0 => "ClassStyle('spaced')".to_string(),
+            1 => "ClassStyle('spaced_prefixed')".to_string(),
+            2 => "ClassStyle('class_attribute')".to_string(),
+            _ => "ClassStyle('unknown')".to_string(),
+        }
+    }
+}
+
+
+#[pyclass(name = "IncludeBg")]
+pub struct PyIncludeBg {
+    kind: usize,
+}
+
+#[pymethods]
+impl PyIncludeBg {
+    #[new]
+    pub fn new(kind: &str) -> Self {
+        match kind {
+            "no" | "false" => PyIncludeBg { kind: 0 },
+            "yes" | "true" => PyIncludeBg { kind: 1 },
+            _ => PyIncludeBg { kind: 2 },
+        }
+    }
+
+    #[staticmethod]
+    pub fn no() -> PyIncludeBg {
+        PyIncludeBg { kind: 0 }
+    }
+
+    #[staticmethod]
+    pub fn yes() -> PyIncludeBg {
+        PyIncludeBg { kind: 1 }
+    }
+
+    #[staticmethod]
+    pub fn if_different() -> PyIncludeBg {
+        PyIncludeBg { kind: 2 }
+    }
+
+    pub fn __repr__(&self) -> String {
+        match self.kind {
+            0 => "IncludeBg('no')".to_string(),
+            1 => "IncludeBg('yes')".to_string(),
+            2 => "IncludeBg('if_different')".to_string(),
+            _ => "IncludeBg('unknown')".to_string(),
+        }
+    }
+}
+
+
 #[pyfunction]
-pub fn highlighted_html_for_string(
+pub fn css_for_theme(theme: &PyTheme, class_style: &str) -> PyResult<String> {
+    let syntect_style = match class_style {
+        "spaced" => SyntectClassStyle::Spaced,
+        "class_attribute" => SyntectClassStyle::SpacedPrefixed { prefix: "" },
+        _ => SyntectClassStyle::SpacedPrefixed { prefix: "syn-" },
+    };
+
+    let real_theme = syntect::highlighting::Theme {
+        name: Some(theme.name().clone()),
+        author: Some(theme.author().clone()),
+        settings: syntect::highlighting::ThemeSettings::default(),
+        scopes: Vec::new(),
+    };
+
+    css_for_theme_with_class_style(&real_theme, syntect_style)
+        .map_err(|e| PyErr::new::<PyValueError, _>(format!("CSS generation failed: {}", e)))
+}
+
+
+#[pyfunction]
+pub fn highlighted_html_for_string_py(
     code: &str,
-    syntax: &str,
-    _theme: &str,
-) -> String {
-    format!(
-        "<pre><code class=\"{}\">{}</code></pre>",
-        syntax,
-        code.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
-    )
+    syntax_ref: &PySyntaxReference,
+    theme: &PyTheme,
+    syntax_set: &PySyntaxSet,
+    theme_set: &PyThemeSet,
+    _include_bg: &str,
+    _start_line: usize,
+) -> PyResult<String> {
+    let syntax = syntax_set.inner.find_syntax_by_name(&syntax_ref.name)
+        .ok_or_else(|| PyErr::new::<PyValueError, _>(
+            format!("Syntax not found: {}", syntax_ref.name)
+        ))?;
+
+    let real_theme = theme_set.inner.themes.get(&theme.key())
+        .ok_or_else(|| PyErr::new::<PyValueError, _>(
+            format!("Theme not found: {}", theme.key())
+        ))?;
+
+    let result = syntect::html::highlighted_html_for_string(code, &syntax_set.inner, &syntax, real_theme);
+    match result {
+        Ok(html) => Ok(html),
+        Err(e) => Err(PyErr::new::<PyValueError, _>(format!("HTML generation failed: {}", e))),
+    }
 }
 
-// ============================================================================
-// highlighted_html_at_line_and_column_number (stub)
-// ============================================================================
 
-/// Generate highlighted HTML with line and column number attributes.
 #[pyfunction]
 pub fn highlighted_html_at_line_and_column_number(
     code: &str,
-    syntax: &str,
-    _theme: &str,
+    syntax_ref: &PySyntaxReference,
+    theme: &PyTheme,
+    syntax_set: &PySyntaxSet,
+    theme_set: &PyThemeSet,
     start_line: usize,
-) -> String {
-    let lines: Vec<&str> = code.split('\n').collect();
-    let mut html = String::from("<pre><code>");
-    for (i, line) in lines.iter().enumerate() {
-        if i > 0 {
-            html.push('\n');
+) -> PyResult<String> {
+    let syntax = syntax_set.inner.find_syntax_by_name(&syntax_ref.name)
+        .ok_or_else(|| PyErr::new::<PyValueError, _>(
+            format!("Syntax not found: {}", syntax_ref.name)
+        ))?;
+
+    let real_theme = theme_set.inner.themes.get(&theme.key())
+        .ok_or_else(|| PyErr::new::<PyValueError, _>(
+            format!("Theme not found: {}", theme.key())
+        ))?;
+
+    let mut highlighter = HighlightLines::new(syntax, real_theme);
+    let mut html = String::new();
+
+    let (pre_tag, _bg) = start_highlighted_html_snippet(real_theme);
+    html.push_str(&pre_tag);
+
+    for (line_idx, line) in code.split('\n').enumerate() {
+        let line_num = start_line + line_idx;
+
+        match highlighter.highlight_line(line, &syntax_set.inner) {
+            Ok(ranges) => {
+                let mut line_html = format!("<span data-line=\"{}\">", line_num);
+                let mut prev_style: Option<PyStyle> = None;
+                let mut span_open = false;
+
+                for (style, text) in ranges {
+                    let py_style = PyStyle {
+                        foreground: crate::style::PyColor { r: style.foreground.r, g: style.foreground.g, b: style.foreground.b, a: style.foreground.a },
+                        background: crate::style::PyColor { r: style.background.r, g: style.background.g, b: style.background.b, a: style.background.a },
+                        font_style: crate::style::PyFontStyle { bits: style.font_style.bits() },
+                    };
+
+                    if span_open {
+                        if prev_style != Some(py_style.clone()) {
+                            line_html.push_str("</span>");
+                            span_open = false;
+                        }
+                    }
+
+                    if !span_open {
+                        line_html.push_str("<span style=\"");
+                        line_html.push_str(&format!("color:{};", py_style.foreground.to_hex()));
+                        if py_style.font_style.bits & 1 != 0 {
+                            line_html.push_str("font-weight:bold;");
+                        }
+                        if py_style.font_style.bits & 4 != 0 {
+                            line_html.push_str("font-style:italic;");
+                        }
+                        line_html.push_str("\">");
+                        span_open = true;
+                    }
+
+                    line_html.push_str(&text.replace('&', "&amp;")
+                                        .replace('<', "&lt;")
+                                        .replace('>', "&gt;"));
+
+                    prev_style = Some(py_style);
+                }
+
+                if span_open {
+                    line_html.push_str("</span>");
+                }
+
+                html.push_str(&line_html);
+                html.push('\n');
+            }
+            Err(_) => {
+                html.push_str(&format!("<span data-line=\"{}\">{}</span>\n",
+                    line_num,
+                    line.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")));
+            }
         }
-        html.push_str(&format!(
-            "<span data-line=\"{}\">{}</span>",
-            start_line + i,
-            line.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
-        ));
     }
-    html.push_str("</code></pre>");
-    html
+
+    html.push_str("</pre>\n");
+    Ok(html)
 }

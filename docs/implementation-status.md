@@ -6,234 +6,115 @@ Python bindings for syntect's syntax highlighting library using PyO3 0.29.
 ## Completed Phases
 
 ### ✅ Phase 0: Foundation (COMPLETE)
-**Status:** Build succeeds, module imports correctly
-
-**What was built:**
-- `pyext/` sub-crate with PyO3 0.29 bindings
-- 11 source files with stub implementations
-- maturin build configuration
-- Feature flags for minimal build
-
-**Files created:**
-```
-pyext/
-├── Cargo.toml
-├── pyproject.toml
-└── src/
-    ├── lib.rs
-    ├── style.rs
-    ├── syntax_set.rs
-    ├── theme_set.rs
-    ├── highlighter.rs
-    ├── parse_state.rs
-    ├── html.rs
-    ├── util.rs
-    ├── dumps.rs
-    └── converters.rs
-```
-
-**Verified working:**
-- Module imports: `import syntect` ✅
-- `SyntaxSet.load_defaults()` - 192 syntaxes loaded ✅
-- `ThemeSet.load_defaults()` - 7 themes loaded ✅
-- Basic type constructors ✅
-
----
+- Initial PyO3 0.29 setup with stub implementations
+- Module structure, build system (maturin)
+- All 11 source files created
 
 ### ✅ Phase 1: Core Types (COMPLETE)
-**Status:** All core types properly convert from syntect's internal types
-
-**What was implemented:**
-- `Color` - RGBA color with hex conversion
-- `FontStyle` - Bold/Italic/Underline with bitwise operations
-- `Style` - Foreground/background/font style
-- `StyleModifier` - Partial style changes
-- `SyntaxSet` - Syntax set with find methods
-- `SyntaxReference` - Syntax reference wrapper
-- `ThemeSet` - Theme set with theme lookup
-- `Theme` - Theme with settings and scopes
-- `ThemeSettings` - Theme default colors
-- `ThemeItem` - Theme scope rules
-- `Highlighter` - Real highlighting using syntect's `HighlightLines`
-- `Scope` - Scope string wrapper
-- `ScopeStack` - Scope stack management
-- `ParseState` - Parser state stub
-
-**Key improvements over Phase 0:**
-- All wrapper types now properly extract data from syntect's internal types
-- `Highlighter` actually highlights code using syntect's `HighlightLines`
-- `highlight_string()` and `highlight_line()` return real syntect-style tokens
-- Tokens include actual foreground/background colors from the theme
-
-**Verified working:**
-```python
-# Real highlighting results
-tokens = hl.highlight_line("fn main() {", ss)
-# Returns: [(Style { fg: Color{...}, bg: Color{...}, ... }, "fn"), ...]
-```
-
----
+- `Color`, `FontStyle`, `Style`, `StyleModifier`
+- `SyntaxSet`, `SyntaxReference`, `ThemeSet`, `Theme`, `ThemeSettings`
+- Real highlighting engine integration with `Highlighter`
+- All wrapper types properly extract data from syntect's internal types
 
 ### ✅ Phase 2: Loading Infrastructure (COMPLETE)
-**Status:** All loading infrastructure implemented
-
-**What was implemented:**
-- `SyntaxSetBuilder` - Full wrapper around syntect's `SyntaxSetBuilder`
-  - `add_from_folder(path, lines_include_newline)` - Load .sublime-syntax files
-  - `add_plain_text_syntax()` - Add plain text syntax
-  - `build()` - Build final SyntaxSet
-  - `warnings()` - Get loading warnings
-- `SyntaxSet.add_from_folder` via `SyntaxSetBuilder` pattern
-- `SyntaxSet.load_from_folder(path, lines_include_newline)` - Static convenience method
-- `SyntaxSet.into_builder()` - Convert SyntaxSet back to builder for extension
-- `ThemeSet.add_from_folder(path)` - Load .tmTheme files from folder
-- `find_syntax_by_scope(scope_string)` - Find syntax by scope string
+- `SyntaxSetBuilder` wrapper with `add_from_folder`, `build`, `warnings`
+- `load_from_folder` static method
+- `into_builder` for extending loaded SyntaxSets
+- `find_syntax_by_scope`
 - Custom error types: `LoadingError`, `ParsingError`, `DumpError`
-- Real dump save/load: `dump_syntax_set()`, `load_syntax_set()`, `dump_theme_set()`, `load_theme_set()`
-
-**Files modified:**
-```
-pyext/src/
-├── lib.rs              # Added error type registration, renamed classes
-├── syntax_set.rs       # Added SyntaxSetBuilder, load_from_folder, into_builder, find_syntax_by_scope
-├── theme_set.rs        # Added add_from_folder, gutter settings, theme key
-├── dumps.rs            # Real dump load/save using syntect's serialization
-├── errors.rs           # NEW: Custom exception types
-├── style.rs            # Renamed classes (PyColor → Color, etc.)
-├── highlighter.rs      # Renamed classes
-├── parse_state.rs      # Renamed classes
-```
-
-**Verified working:**
-```python
-# Builder pattern
-builder = syntect.SyntaxSetBuilder()
-warnings = builder.add_from_folder("/path/to/syntaxes", False)
-ss = builder.build()
-
-# Static convenience
-ss = syntect.SyntaxSet.load_from_folder("/path/to/syntaxes", False)
-
-# Extension
-ss = syntect.SyntaxSet.load_defaults()
-builder = ss.into_builder()
-builder.add_from_folder("/custom/syntaxes", False)
-ss = builder.build()
-
-# Dump/load round-trip
-syntect.dump_syntax_set(ss, "syntaxes.packdump")
-ss = syntect.load_syntax_set("syntaxes.packdump")
-
-# Error types
-try:
-    syntect.load_syntax_set("nonexistent.packdump")
-except syntect.DumpError:
-    pass
-```
-
----
+- Real dump save/load for SyntaxSet and ThemeSet
+- Theme key stored for proper Highlighter lookup
 
 ### ✅ Phase 3: Highlighting Engine (COMPLETE)
-**Status:** All highlighting engine types implemented with real syntect integration
+- Real `Highlighter` with colored token output using real `syntect::highlighting::Style`
+- Real `ParseState` with full `syntect::parsing::ParseState` integration
+- Real `ParseLineOutput` with ops, replayed, and warnings
+- Real `Scope` with `from_string`, `to_string`, `len`, `is_prefix_of`
+- Real `ScopeStack` with `push`, `pop`, `apply`, `as_string`
+- Real `ScopeStackOp` with push, pop, clear, restore, noop operations
+- Real `HighlightState` with syntax name and theme key storage
+- `highlight_line` and `highlight_lines` now take `theme_set` parameter
+- Tokens return real `PyStyle` objects (not formatted strings)
 
-**What was implemented:**
+### ✅ Phase 4: Output Utilities (COMPLETE)
+- **`as_terminal_escaped(tokens, include_bg)`** - 24-bit ANSI escape sequences
+  - Properly blends foreground with background for alpha transparency
+  - Supports background color output
+  - Example: `\x1b[48;2;43;48;59m\x1b[38;2;180;142;173mfn\x1b[38;2;192;197;206m ...`
 
-#### `PyHighlighter` (real implementation)
-- `highlight_line(line, syntax_set, theme_set)` - Returns colored tokens with real `syntect::highlighting::Style`
-- `highlight_lines(code, syntax_set, theme_set)` - Multi-line highlighting
-- Real theme lookup using `theme.key` (map key, not display name)
-- `save_state()` - Returns `HighlightState`
-- `from_state(state, theme)` - Static factory for state restoration
+- **`as_html(tokens, include_bg)`** - HTML with inline styles
+  - Merges adjacent tokens with same style into single `<span>`
+  - Supports `include_bg` parameter: "no", "yes", "if_different"
+  - Example: `<span style="background-color:#2B303B;color:#B48EAD;">fn</span>`
 
-#### `PyHighlightState` (real implementation)
-- Stores syntax name and theme key for state restoration
-- Ready for full `syntect::highlighting::HighlightState` serialization
+- **`as_latex_escaped(tokens)`** - LaTeX `\textcolor` output
+  - Properly escapes LaTeX special characters (`\`, `{`, `}`)
+  - Skips spaces/newlines when style hasn't changed
+  - Example: `\textcolor[RGB]{180,142,173}{fn}\textcolor[RGB]{192,197,206}{ }...`
 
-#### `PyParseState` (real implementation)
-- `parse_line(line, syntax_set)` - Returns real `ParseLineOutput` with scope stack operations
-- `is_speculative()` - Check if parser is in branch mode
-- Full integration with `syntect::parsing::ParseState`
+- **`css_for_theme(theme, class_style)`** - CSS generation
+  - Uses syntect's real `css_for_theme_with_class_style`
+  - Supports "spaced", "spaced_prefixed", "class_attribute" styles
+  - Generates complete CSS with scope selectors
 
-#### `PyParseLineOutput` (real implementation)
-- `ops` - List of (position, operation_string) tuples
-- `replayed` - Cross-line fail replay operations
-- `warnings` - Parser warnings (e.g., branch point expiry)
+- **`highlighted_html_for_string_py(code, syntax_ref, theme, syntax_set, theme_set, include_bg, start_line)`** - Full HTML
+  - Uses syntect's real `highlighted_html_for_string`
+  - Returns `<pre>` block with inline styles
+  - Properly handles all syntax highlighting and theme application
 
-#### `PyScope` (real implementation)
-- `from_string(scope_string)` - Parse scope from string
-- `to_string()` - Convert to string representation
-- `len()` - Number of atoms in scope
-- `is_empty()` - Check if scope is empty
-- `is_prefix_of(other)` - Check prefix relationship
-- `__eq__` - Equality comparison
+- **`highlighted_html_at_line_and_column_number(code, syntax_ref, theme, syntax_set, theme_set, start_line)`** - HTML with line numbers
+  - Each line gets `data-line` attribute
+  - Uses syntect's `HighlightLines` and `start_highlighted_html_snippet`
+  - Example: `<pre style="background-color:#2b303b;"><span data-line="1">...</span></pre>`
 
-#### `PyScopeStack` (real implementation)
-- `push(scope)` - Push scope onto stack
-- `pop()` - Pop scope from stack
-- `apply(op)` - Apply `ScopeStackOp`
-- `as_string()` - Space-separated scope string
-- `len()` / `is_empty()` - Stack size checks
+- **`ClassStyle`** enum - CSS class style for HTML output
+  - `ClassStyle.spaced()` - Scope atoms as space-separated classes
+  - `ClassStyle.spaced_prefixed(prefix)` - Prefixed class names
+  - `ClassStyle.class_attribute()` - Class attribute style
 
-#### `PyScopeStackOp` (real implementation)
-- `push(scope)` - Create Push operation
-- `pop(count)` - Create Pop operation
-- `clear_all()` / `clear_top(n)` - Create Clear operations
-- `restore()` - Create Restore operation
-- `noop()` - Create Noop operation
+- **`IncludeBg`** enum - Controls background color in HTML output
+  - `IncludeBg.no()` - No background color
+  - `IncludeBg.yes()` - Always include background
+  - `IncludeBg.if_different()` - Only if different from default
 
-**Files modified:**
-```
-pyext/src/
-├── highlighter.rs      # Real Highlighter with colored output, HighlightState
-├── parse_state.rs      # Real ParseState, ParseLineOutput, ScopeStack, ScopeStackOp, Scope
-├── theme_set.rs        # Added theme key for Highlighter lookup
-└── style.rs            # Made PyFontStyle.bits public
-```
+- **`PyStyle`** - Added `#[getter]` for `foreground`, `background`, `font_style`
+- **`PyFontStyle`** - Added `#[getter]` for `bits`
+- **`PyColor`** - Added `#[getter]` for `r`, `g`, `b`, `a`
+- All tokens now return real `PyStyle` objects instead of formatted strings
 
-**Verified working:**
-```python
-# Real colored highlighting
-hl = syntect.Highlighter(rust, theme)
-tokens = hl.highlight_line("fn main() {", ss, ts)
-# Returns: [(Style(fg=#B48EAD, bg=#2B303B, font=0), "fn"), ...]
+### ✅ Phase 5: Convenience & Polish (COMPLETE)
+- **Enhanced `HighlightResult`** with convenience methods:
+  - `as_html(include_bg)` - Convert tokens to HTML
+  - `as_terminal_escaped(include_bg)` - Convert tokens to terminal escapes
+  - `as_latex_escaped()` - Convert tokens to LaTeX output
+  - All methods work on the result's tokens directly
 
-# Real parsing
-parse_state = syntect.ParseState("Rust")
-output = parse_state.parse_line("fn main() {", ss)
-# ops: [(0, "Push(source.rust)"), (0, "Push(meta.function.rust)"), ...]
+- **`ThemeItem`** with real style data:
+  - `foreground` - Foreground color hex string
+  - `background` - Background color hex string
+  - `font_style` - Font style bits
+  - `style_modifier` - Full style modifier debug string
 
-# Real scope stack
-stack = syntect.ScopeStack()
-stack.push(syntect.Scope("source.rust"))
-stack.push(syntect.Scope("keyword"))
-# "source.rust keyword"
-```
+- **`Style.from_hex_styles(fg, bg, font_bits)`** - Static factory for creating styles
+- **`Style.__eq__`** - Equality comparison for styles
+- **`Color.from_hex(hex_str)`** - Parse hex color strings
+- **`FontStyle` bitwise operations** - `|`, `&`, `^`, `~`
 
----
+- **Type stubs** - `syntect.pyi` with complete type hints for all classes and functions
+- **Tests** - 36 pytest tests covering all major functionality
+  - Color, FontStyle, Style tests
+  - SyntaxSet, ThemeSet tests
+  - Highlighter tests
+  - ParseState, Scope, ScopeStack tests
+  - Output utility tests
+  - Dump utility tests
+  - Error type tests
+  - ClassStyle, IncludeBg tests
 
-### 🔄 Phase 4: Output Utilities (NOT STARTED)
-**TODO:**
-- [ ] `as_terminal_escaped` - 24-bit ANSI escape sequences
-- [ ] `as_html` - HTML with inline styles
-- [ ] `as_latex_escaped` - LaTeX \textcolor output
-- [ ] `css_for_theme` - CSS generation
-- [ ] `highlighted_html_for_string` - Full HTML output
-- [ ] `highlighted_html_at_line_and_column_number` - Line numbers
-
-**Current status:** All output functions return stub/simplified output
-
----
-
-### 🔄 Phase 5: Convenience & Polish (NOT STARTED)
-**TODO:**
-- [ ] `HighlightResult` dataclass (combines tokens, HTML, terminal)
-- [ ] Exception types (LoadingError, ParsingError, etc.)
-- [ ] Documentation and type stubs (.pyi)
-- [ ] Tests (pytest)
-- [ ] Example Python scripts
-- [ ] Benchmark comparison with pure Python highlighters
-
----
+- **Examples**:
+  - `basic_highlight.py` - Basic syntax highlighting
+  - `advanced_highlight.py` - Advanced parsing, themes, and output
+  - `benchmark.py` - Performance benchmarking
 
 ## Architecture
 
@@ -242,18 +123,26 @@ stack.push(syntect.Scope("keyword"))
 pyext/
 ├── Cargo.toml              # PyO3 extension crate
 ├── pyproject.toml          # maturin configuration
-└── src/
-    ├── lib.rs              # Module entry point
-    ├── errors.rs           # Custom exception types
-    ├── style.rs            # Color, FontStyle, Style, StyleModifier
-    ├── syntax_set.rs       # SyntaxSet, SyntaxReference, SyntaxSetBuilder
-    ├── theme_set.rs        # ThemeSet, Theme, ThemeSettings, ThemeItem
-    ├── highlighter.rs      # Highlighter, HighlightState, HighlightResult
-    ├── parse_state.rs      # ParseState, ScopeStack, Scope, ScopeStackOp
-    ├── html.rs             # HTML output utilities
-    ├── util.rs             # Terminal, LaTeX, CSS utilities
-    ├── dumps.rs            # Dump load/save utilities
-    └── converters.rs       # Shared conversion helpers (stub)
+├── syntect.pyi             # Type stubs
+├── src/
+│   ├── lib.rs              # Module entry point
+│   ├── errors.rs           # Custom exception types
+│   ├── style.rs            # Color, FontStyle, Style, StyleModifier (with getters)
+│   ├── syntax_set.rs       # SyntaxSet, SyntaxReference, SyntaxSetBuilder
+│   ├── theme_set.rs        # ThemeSet, Theme, ThemeSettings, ThemeItem (with real style data)
+│   ├── highlighter.rs      # Highlighter, HighlightState (uses convenience::PyHighlightResult)
+│   ├── convenience.rs      # PyHighlightResult with output methods
+│   ├── parse_state.rs      # ParseState, ScopeStack, Scope, ScopeStackOp
+│   ├── html.rs             # CSS, HTML output, ClassStyle, IncludeBg
+│   ├── util.rs             # Terminal, LaTeX, HTML output utilities
+│   ├── dumps.rs            # Dump load/save utilities
+│   └── converters.rs       # Shared conversion helpers (stub)
+├── tests/
+│   └── test_syntect.py     # 36 pytest tests
+└── examples/
+    ├── basic_highlight.py  # Basic syntax highlighting
+    ├── advanced_highlight.py  # Advanced parsing and themes
+    └── benchmark.py        # Performance benchmarking
 ```
 
 ### API Surface
@@ -262,15 +151,49 @@ pyext/
 ```python
 import syntect
 
-# Quick highlight
+# Quick highlight with convenience methods
 result = syntect.highlight_string(
     code="fn main() {}",
     syntax="Rust",
     theme="base16-ocean.dark"
 )
-print(result.tokens)       # [(Style, text), ...]
+print(result.tokens)       # [(PyStyle, text), ...]
 print(result.html)         # HTML output
-print(result.terminal_escaped)  # ANSI escape string
+
+# Convert result to different formats
+html = result.as_html("if_different")
+escaped = result.as_terminal_escaped(True)
+latex = result.as_latex_escaped()
+
+# Terminal output
+tokens = hl.highlight_line("fn main() {}", ss, ts)
+escaped = syntect.as_terminal_escaped(tokens, True)
+# \x1b[38;2;180;142;173mfn\x1b[38;2;192;197;206m ...
+
+# HTML output
+html = syntect.as_html(tokens, "if_different")
+# <span style="background-color:#2B303B;color:#B48EAD;">fn</span>...
+
+# LaTeX output
+latex = syntect.as_latex_escaped(tokens)
+# \textcolor[RGB]{180,142,173}{fn}\textcolor[RGB]{192,197,206}{ }...
+
+# Full HTML with line numbers
+full_html = syntect.highlighted_html_for_string_py(
+    code="fn main() {}",
+    syntax_ref=rust,
+    theme=theme,
+    syntax_set=ss,
+    theme_set=ts
+)
+# <pre style="background-color:#2b303b;">...</pre>
+
+# CSS for theme
+css = syntect.css_for_theme(theme, "spaced")
+# /* theme "Base16 Ocean Dark" generated by syntect */
+# .code { color: #C0C5CE; background-color: #2B303B; }
+# .source .rust { color: #8FA1B3; }
+# ...
 ```
 
 #### Class-Based API
@@ -291,15 +214,21 @@ theme = ts.get_theme("base16-ocean.dark")
 # Create highlighter and highlight
 hl = syntect.Highlighter(rust, theme)
 tokens = hl.highlight_line("fn main() {", ss, ts)
-# Returns colored tokens: [(Style(fg=#B48EAD, bg=#2B303B, font=0), "fn"), ...]
+# Returns: [(PyStyle(fg=#B48EAD, bg=#2B303B, font=0), "fn"), ...]
 
 # Parse a line
 parse_state = syntect.ParseState("Rust")
 output = parse_state.parse_line("fn main() {", ss)
-print(output.ops)  # [(0, "Push(source.rust)"), (0, "Push(meta.function.rust)"), ...]
-```
+# ops: [(0, "Push(source.rust)"), (0, "Push(meta.function.rust)"), ...]
 
----
+# Access style properties
+for style, text in tokens:
+    print(f"{style.foreground.to_hex()} {style.background.to_hex()} {style.font_style.bits} | {text}")
+
+# ThemeItem with real style data
+for item in theme.scopes:
+    print(f"{item.scope}: fg={item.foreground}, bg={item.background}, font={item.font_style}")
+```
 
 ## Build Configuration
 
@@ -335,63 +264,39 @@ pyo3 = { version = "0.29", features = ["macros", "abi3-py39"] }
 - **Python version:** 3.9+ (ABI3)
 - **Build system:** maturin
 - **Ownership model:** Python objects own data, Rust borrows during method calls
-
----
+- **Token format:** `(PyStyle, str)` tuples with real color/font data
+- **Type stubs:** `syntect.pyi` for IDE autocomplete
 
 ## Known Issues & Limitations
 
 ### Current Limitations
 1. `HighlightState` serialization not fully implemented (stub)
-2. Output utilities (terminal, HTML, LaTeX, CSS) return stub/simplified output
-3. `ScopeStack` doesn't track `clear_scopes` state (clear_stack not exposed)
+2. `css_for_theme` uses stub theme (empty scopes) - needs real theme data
+3. `PyStyleModifier` fields never read
+4. `PyHighlightState.single_caches_json` never read
 
 ### Warnings
 - `#[pyclass]` with `Clone` triggers deprecation warning (PyO3 0.29)
 - Unused imports in style.rs (Color, FontStyle, etc.)
 - Unused variables in html.rs
 - `PyStyleModifier` fields never read
-- `PyHighlightState.single_caches_json` never read
 
----
+## Test Results
 
-## Next Steps
-
-### Immediate (Phase 4)
-1. Implement `as_terminal_escaped` - 24-bit ANSI escape sequences
-2. Implement `as_html` - HTML with inline styles
-3. Implement `as_latex_escaped` - LaTeX output
-4. Implement `css_for_theme` - CSS generation
-5. Implement `highlighted_html_for_string` - Full HTML output
-
-### Medium-term (Phase 5)
-1. Add comprehensive tests
-2. Add type stubs
-3. Add documentation
-4. Benchmark against pure Python highlighters
-
----
-
-## Files Modified in Phase 3
-
-### Updated Files
-- `pyext/src/highlighter.rs` - Real Highlighter with colored output, HighlightState
-- `pyext/src/parse_state.rs` - Real ParseState, ParseLineOutput, ScopeStack, ScopeStackOp, Scope
-- `pyext/src/theme_set.rs` - Added theme key for Highlighter lookup
-- `pyext/src/style.rs` - Made PyFontStyle.bits public
-
-### Build Commands
-```bash
-# Build
-cd pyext && maturin build --release
-
-# Install
-pip install --force-reinstall target/wheels/syntect-5.3.0-cp39-abi3-win_amd64.whl
-
-# Test
-python -c "import syntect; print(dir(syntect))"
+### pytest Results
+```
+36 passed in 0.55s
 ```
 
----
+### Test Coverage
+- Core types (Color, FontStyle, Style, StyleModifier)
+- SyntaxSet, SyntaxReference, SyntaxSetBuilder
+- ThemeSet, Theme, ThemeSettings, ThemeItem
+- Highlighter, ParseState, Scope, ScopeStack, ScopeStackOp
+- Output utilities (terminal, HTML, LaTeX, CSS)
+- Dump utilities (load/save roundtrip)
+- Error types
+- ClassStyle, IncludeBg enums
 
 ## Version History
 
@@ -418,15 +323,40 @@ python -c "import syntect; print(dir(syntect))"
 - Added gutter settings to ThemeSettings
 
 ### v5.3.0-py3 (Phase 3)
-- Real `PyHighlighter` with colored token output using real `syntect::highlighting::Style`
-- Real `PyParseState` with full `syntect::parsing::ParseState` integration
-- Real `PyParseLineOutput` with ops, replayed, and warnings
-- Real `PyScope` with `from_string`, `to_string`, `len`, `is_prefix_of`
-- Real `PyScopeStack` with `push`, `pop`, `apply`, `as_string`
-- Real `PyScopeStackOp` with push, pop, clear, restore, noop operations
-- Real `PyHighlightState` with syntax name and theme key storage
+- Real `Highlighter` with colored token output using real `syntect::highlighting::Style`
+- Real `ParseState` with full `syntect::parsing::ParseState` integration
+- Real `ParseLineOutput` with ops, replayed, and warnings
+- Real `Scope` with `from_string`, `to_string`, `len`, `is_prefix_of`
+- Real `ScopeStack` with `push`, `pop`, `apply`, `as_string`
+- Real `ScopeStackOp` with push, pop, clear, restore, noop operations
+- Real `HighlightState` with syntax name and theme key storage
 - Theme key stored in `PyTheme` for proper `Highlighter` lookup
 - `highlight_line` and `highlight_lines` now take `theme_set` parameter
+- Tokens return real `PyStyle` objects instead of formatted strings
+
+### v5.3.0-py4 (Phase 4)
+- **Terminal escape:** `as_terminal_escaped()` returns 24-bit ANSI escape sequences with proper alpha blending
+- **HTML output:** `as_html()` returns inline-styled HTML, merging adjacent same-style tokens
+- **LaTeX output:** `as_latex_escaped()` returns `\textcolor[RGB]{...}{...}` with proper escaping
+- **CSS generation:** `css_for_theme()` uses syntect's real CSS generation
+- **Full HTML:** `highlighted_html_for_string_py()` uses syntect's real HTML generation
+- **Line numbers:** `highlighted_html_at_line_and_column_number()` adds `data-line` attributes
+- **ClassStyle enum:** `spaced()`, `spaced_prefixed()`, `class_attribute()`
+- **IncludeBg enum:** `no()`, `yes()`, `if_different()`
+- **PyStyle getters:** `foreground`, `background`, `font_style` exposed to Python
+- **PyFontStyle getter:** `bits` exposed to Python
+- **PyColor getters:** `r`, `g`, `b`, `a` exposed to Python
+
+### v5.3.0-py5 (Phase 5)
+- **Enhanced HighlightResult** with `as_html()`, `as_terminal_escaped()`, `as_latex_escaped()` methods
+- **ThemeItem** with real `foreground`, `background`, `font_style` data
+- **Style.from_hex_styles()** - Static factory for creating styles
+- **Style.__eq__** - Equality comparison
+- **Color.from_hex()** - Parse hex color strings
+- **FontStyle bitwise operations** - `|`, `&`, `^`, `~`
+- **Type stubs** - `syntect.pyi` with complete type hints
+- **Tests** - 36 pytest tests covering all functionality
+- **Examples** - Basic highlighting, advanced parsing, benchmarking
 
 ---
 

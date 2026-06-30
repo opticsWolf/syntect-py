@@ -1,4 +1,4 @@
-"""Example: Demonstrate incremental highlighting state."""
+"""Example: Demonstrate incremental highlighting with real state."""
 import syntect
 
 # Load syntax set and theme set
@@ -6,52 +6,47 @@ ss = syntect.SyntaxSet.load_defaults(True)
 ts = syntect.ThemeSet.load_defaults()
 
 # Get Rust syntax and theme
-rust = ss.find_syntax_by_name('Rust')
-theme = ts.get_theme('base16-ocean.dark')
-
-# Create highlighter
-hl = syntect.Highlighter(rust, theme)
+rust = ss.find_syntax_by_name("Rust")
+theme = ts.get_theme("base16-ocean.dark")
 
 # Code to highlight
 code = """fn main() {
     let x = 42;
-    println!("Hello, World!");
+    let y = x * 2;
+    println!("Result: {}", y);
 }"""
 
-lines = code.split('\n')
+lines = code.split("\n")
 
-print("=== Incremental Highlighting Demo ===")
-print()
+print("=== Incremental Highlighting Demo ===\n")
 
-# Highlight first few lines and save state
-print("Highlighting first 2 lines...")
-for i, line in enumerate(lines[:2]):
-    tokens = hl.highlight_line(line, ss, ts)
-    print(f"  Line {i}: {len(tokens)} tokens")
+# Create highlighter and highlight first line
+hl = syntect.Highlighter(rust, theme)
+print("Highlighting first line...")
+tokens = hl.highlight_line(lines[0], ss, ts)
+print(f"  Line 0: {len(tokens)} tokens")
 
-# Save state (for future use)
-state = hl.save_state()
-print(f"  Saved state: {state}")
-print()
+# Save state after first line
+state = hl.save_state(ss, ts)
+print(f"  State saved: path_scope_stack has {len(state.path_scope_stack)} scopes\n")
+
+# Create new highlighter from saved state
+hl2 = syntect.Highlighter.from_state(state, theme)
+print(f"  New highlighter from state: {hl2}\n")
 
 # Highlight remaining lines
 print("Highlighting remaining lines...")
-for i, line in enumerate(lines[2:], start=2):
+for i, line in enumerate(lines[1:], start=1):
     tokens = hl.highlight_line(line, ss, ts)
     print(f"  Line {i}: {len(tokens)} tokens")
 
-print()
-print("=== State Demo ===")
-print(f"State path_scope_string: {state.path_scope_string}")
-print(f"State styles_json length: {len(state.styles_json)}")
-print(f"State single_caches_json length: {len(state.single_caches_json)}")
+print("\n=== CRLF Line Endings ===")
+# Test CRLF handling
+crlf_code = "fn main() {\r\n    let x = 42;\r\n}"
+tokens = hl.highlight_lines(crlf_code, ss, ts)
+for i, line_tokens in enumerate(tokens):
+    for _, text in line_tokens:
+        assert "\r" not in text, f"Found \\r in text: {repr(text)}"
+print("  CRLF handling verified: no \\r in token text")
 
-# Create a new highlighter from state
-print()
-print("Creating new highlighter from state...")
-hl2 = syntect.Highlighter.from_state(state, theme)
-print(f"  New highlighter: {hl2}")
-
-# Note: In a real implementation, the state would preserve the exact
-# parsing position for true incremental highlighting. Currently, the
-# state stores the syntax name and can be used to create a new highlighter.
+print("\n=== Done ===")

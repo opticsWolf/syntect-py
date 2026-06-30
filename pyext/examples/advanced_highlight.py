@@ -1,4 +1,4 @@
-"""Example: Advanced syntax highlighting with parsing and themes"""
+"""Example: Advanced syntax highlighting with parsing, themes, and HTML generation."""
 import syntect
 
 # Load default syntaxes and themes
@@ -13,11 +13,12 @@ print("=== Theme Information ===")
 print(f"Name: {theme.name}")
 print(f"Key: {theme.key}")
 print(f"Author: {theme.author}")
-print(f"Settings: {theme.settings}")
 print(f"Number of scopes: {len(theme.scopes)}")
 print("\nFirst 5 theme scopes:")
 for item in theme.scopes[:5]:
-    print(f"  {item.scope[:60]}... fg={item.foreground}, bg={item.background}, font={item.font_style}")
+    fg = item.foreground.to_hex() if item.foreground else "None"
+    bg = item.background.to_hex() if item.background else "None"
+    print(f"  {item.scope[:60]:60s} fg={fg} bg={bg}")
 
 print("\n=== Parsing ===")
 # Parse a line
@@ -72,4 +73,26 @@ print(f"\n=== HTML with Line Numbers ===")
 print(f"Length: {len(line_html)} chars")
 print(line_html[:300] + "...")
 
-print("\n=== All Done ===")
+print("\n=== Advanced HTML: Classed Spans ===")
+# Use ClassedHTMLGenerator
+class_style = syntect.ClassStyle.spaced()
+gen = syntect.ClassedHTMLGenerator(python, ss, class_style)
+print(f"Class style: {class_style}")
+
+# Use tokens_to_classed_spans
+html_spans = syntect.tokens_to_classed_spans(tokens, class_style)
+print(f"\nClassed spans HTML: {len(html_spans)} chars")
+print(f"Contains <span>: {'<span' in html_spans}")
+print(html_spans[:200] + "..." if len(html_spans) > 200 else html_spans)
+
+# Use split_at and modify_range
+print("\n=== split_at and modify_range ===")
+tokens = hl.highlight_line(code, ss, ts)
+left, right = syntect.split_at(tokens, 20)
+print(f"Split at 20: left={len(left)} tokens, right={len(right)} tokens")
+
+# Override style in a range
+modified = syntect.modify_range(tokens, 0, 10, syntect.Style.from_hex_styles("#FF0000", "#000000", 0))
+print(f"Modified: first token fg = {modified[0][0].foreground.to_hex()}")
+
+print("\n=== Done ===")

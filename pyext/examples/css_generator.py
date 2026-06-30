@@ -1,17 +1,16 @@
-"""Example: Generate CSS from theme."""
+"""Example: Generate CSS from theme with different class styles."""
 import syntect
 
 # Load theme set
 ts = syntect.ThemeSet.load_defaults()
 
 # Get a theme
-theme = ts.get_theme('base16-ocean.dark')
+theme = ts.get_theme("base16-ocean.dark")
 
-print("=== CSS Generation Demo ===")
-print()
+print("=== CSS Generation Demo ===\n")
 
 # Generate CSS with different class styles
-for style_name in ['spaced', 'spaced_prefixed', 'class_attribute']:
+for style_name in ["spaced", "class_attribute"]:
     print(f"--- {style_name} ---")
     css = syntect.css_for_theme(theme, style_name)
     print(f"Length: {len(css)} chars")
@@ -19,8 +18,12 @@ for style_name in ['spaced', 'spaced_prefixed', 'class_attribute']:
     print(css[:200])
     print()
 
-# Also use the generate_css alias
-print("=== Using generate_css alias ===")
-css = syntect.generate_css(theme, 'spaced')
+# Use spaced_prefixed style
+print("--- spaced_prefixed (custom-) ---")
+class_style = syntect.ClassStyle.spaced_prefixed("syn-")
+css = syntect.css_for_theme(theme, "spaced_prefixed")
 print(f"Length: {len(css)} chars")
-print(f"Contains scope selectors: {'variable' in css}")
+print(f"Contains 'syn-' prefix: {'syn-' in css}")
+print(css[:200])
+
+print("\n=== Done ===")

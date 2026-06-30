@@ -1,4 +1,4 @@
-"""Example: Basic syntax highlighting"""
+"""Example: Basic syntax highlighting with all output formats."""
 import syntect
 
 # Load default syntaxes and themes
@@ -37,3 +37,11 @@ print(f"Contains escape codes: {chr(0x1b) in escaped}")
 latex = result.as_latex_escaped()
 print(f"\n=== LaTeX ({len(latex)} chars) ===")
 print(latex[:200] + "...")
+
+# Test as_html with different background modes
+print("\n=== as_html modes ===")
+print(f"  no: {len(result.as_html('no', None))} chars")
+print(f"  yes: {len(result.as_html('yes', None))} chars")
+print(f"  if_different: {len(result.as_html('if_different', None))} chars")
+
+print("\n=== Done ===")

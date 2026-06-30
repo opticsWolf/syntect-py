@@ -1,4 +1,4 @@
-"""Example: Highlight a file to terminal with colors."""
+"""Example: Highlight a file to terminal with colors using LinesWithEndings."""
 import syntect
 import sys
 
@@ -7,7 +7,7 @@ ss = syntect.SyntaxSet.load_defaults(True)
 ts = syntect.ThemeSet.load_defaults()
 
 # Get a theme
-theme = ts.get_theme('base16-ocean.dark')
+theme = ts.get_theme("base16-ocean.dark")
 
 # Highlight a file
 def highlight_file(filepath):
@@ -17,25 +17,24 @@ def highlight_file(filepath):
     if syntax_ref is None:
         print(f"Unknown syntax for {filepath}", file=sys.stderr)
         return
-    
+
     # Create highlighter
     hl = syntect.Highlighter(syntax_ref, theme)
-    
-    # Read file
-    with open(filepath, 'r') as f:
-        content = f.read()
-    
-    # Highlight all lines
-    tokens = hl.highlight_file(filepath, ss, ts)
-    
-    # Print with terminal colors
-    for line_tokens in tokens:
-        escaped = syntect.as_terminal_escaped(line_tokens, True)
-        print(escaped, end='')
-        print()  # newline after each line
 
-if __name__ == '__main__':
-    import sys
+    # Read file
+    with open(filepath, "r") as f:
+        content = f.read()
+
+    # Use LinesWithEndings to preserve line endings
+    lines = syntect.lines_with_endings(content)
+    for line_with_ending in lines:
+        tokens = hl.highlight_line(line_with_ending, ss)
+        escaped = syntect.as_terminal_escaped(tokens, True)
+        print(escaped, end="")
+
+    print()  # final newline
+
+if __name__ == "__main__":
     if len(sys.argv) > 1:
         highlight_file(sys.argv[1])
     else:

@@ -1,0 +1,27 @@
+[package]
+name = "syntect-py"
+version = "5.3.0"
+edition = "2021"
+description = "Python bindings for syntect syntax highlighting"
+authors = ["syntect contributors"]
+license = "MIT"
+repository = "https://github.com/trishume/syntect"
+
+[lib]
+name = "syntect"
+crate-type = ["cdylib"]
+
+[dependencies]
+syntect = { path = "..", features = [
+    "parsing",
+    "yaml-load",
+    "plist-load",
+    "dump-load",
+    "dump-create",
+    "regex-fancy",
+    "metadata",
+    "html",
+    "default-syntaxes",
+    "default-themes",
+] }
+pyo3 = { version = "0.29", features = ["macros", "abi3-py39"] }

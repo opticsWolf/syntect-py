@@ -1,0 +1,12 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "syntect"
+requires-python = ">=3.9"
+description = "High quality syntax highlighting using Sublime Text grammars"
+license = "MIT"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]

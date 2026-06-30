@@ -1,10 +1,57 @@
 //! Python bindings for syntect's theme set management.
-#![allow(unused)]
 
 use pyo3::prelude::*;
 use syntect::highlighting::{Theme as SyntectTheme, ThemeSet as SyntectThemeSet};
 use crate::errors;
 use crate::style::{PyColor, PyFontStyle, PyStyleModifier};
+
+// ============================================================================
+// PyUnderlineOption (enum for bracket/tag options)
+// ============================================================================
+
+/// Underline style for bracket matching and tag highlighting.
+#[pyclass(name = "UnderlineOption", skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyUnderlineOption {
+    pub kind: String,
+}
+
+#[pymethods]
+impl PyUnderlineOption {
+    #[staticmethod]
+    pub fn none_() -> Option<PyUnderlineOption> {
+        None
+    }
+
+    #[staticmethod]
+    pub fn underline() -> Option<PyUnderlineOption> {
+        Some(PyUnderlineOption { kind: "underline".to_string() })
+    }
+
+    #[staticmethod]
+    pub fn stippled_underline() -> Option<PyUnderlineOption> {
+        Some(PyUnderlineOption { kind: "stippled_underline".to_string() })
+    }
+
+    #[staticmethod]
+    pub fn squiggly_underline() -> Option<PyUnderlineOption> {
+        Some(PyUnderlineOption { kind: "squiggly_underline".to_string() })
+    }
+
+    pub fn __repr__(&self) -> String {
+        format!("UnderlineOption({})", self.kind)
+    }
+}
+
+/// Convert upstream UnderlineOption to PyUnderlineOption
+fn to_underline_option(opt: &Option<syntect::highlighting::UnderlineOption>) -> Option<PyUnderlineOption> {
+    match opt {
+        None => None,
+        Some(u) => Some(PyUnderlineOption {
+            kind: format!("{:?}", u),
+        }),
+    }
+}
 
 // ============================================================================
 // PyThemeSettings (read-only wrapper)
@@ -18,6 +65,32 @@ pub struct PyThemeSettings {
     selection_background: Option<PyColor>,
     gutter_foreground: Option<PyColor>,
     gutter_background: Option<PyColor>,
+    // NEW fields from upstream ThemeSettings
+    caret: Option<PyColor>,
+    line_highlight: Option<PyColor>,
+    misspelling: Option<PyColor>,
+    minimap_border: Option<PyColor>,
+    accent: Option<PyColor>,
+    popup_css: Option<String>,
+    phantom_css: Option<String>,
+    bracket_contents_foreground: Option<PyColor>,
+    bracket_contents_options: Option<PyUnderlineOption>,
+    brackets_foreground: Option<PyColor>,
+    brackets_background: Option<PyColor>,
+    brackets_options: Option<PyUnderlineOption>,
+    tags_foreground: Option<PyColor>,
+    tags_options: Option<PyUnderlineOption>,
+    highlight: Option<PyColor>,
+    find_highlight: Option<PyColor>,
+    find_highlight_foreground: Option<PyColor>,
+    selection_foreground: Option<PyColor>,
+    selection_border: Option<PyColor>,
+    inactive_selection: Option<PyColor>,
+    inactive_selection_foreground: Option<PyColor>,
+    guide: Option<PyColor>,
+    active_guide: Option<PyColor>,
+    stack_guide: Option<PyColor>,
+    shadow: Option<PyColor>,
 }
 
 #[pymethods]
@@ -47,12 +120,139 @@ impl PyThemeSettings {
         self.gutter_background.clone()
     }
 
+    // NEW getters for all additional ThemeSettings fields
+    #[getter]
+    pub fn caret(&self) -> Option<PyColor> {
+        self.caret.clone()
+    }
+
+    #[getter]
+    pub fn line_highlight(&self) -> Option<PyColor> {
+        self.line_highlight.clone()
+    }
+
+    #[getter]
+    pub fn misspelling(&self) -> Option<PyColor> {
+        self.misspelling.clone()
+    }
+
+    #[getter]
+    pub fn minimap_border(&self) -> Option<PyColor> {
+        self.minimap_border.clone()
+    }
+
+    #[getter]
+    pub fn accent(&self) -> Option<PyColor> {
+        self.accent.clone()
+    }
+
+    #[getter]
+    pub fn popup_css(&self) -> Option<String> {
+        self.popup_css.clone()
+    }
+
+    #[getter]
+    pub fn phantom_css(&self) -> Option<String> {
+        self.phantom_css.clone()
+    }
+
+    #[getter]
+    pub fn bracket_contents_foreground(&self) -> Option<PyColor> {
+        self.bracket_contents_foreground.clone()
+    }
+
+    #[getter]
+    pub fn bracket_contents_options(&self) -> Option<PyUnderlineOption> {
+        self.bracket_contents_options.clone()
+    }
+
+    #[getter]
+    pub fn brackets_foreground(&self) -> Option<PyColor> {
+        self.brackets_foreground.clone()
+    }
+
+    #[getter]
+    pub fn brackets_background(&self) -> Option<PyColor> {
+        self.brackets_background.clone()
+    }
+
+    #[getter]
+    pub fn brackets_options(&self) -> Option<PyUnderlineOption> {
+        self.brackets_options.clone()
+    }
+
+    #[getter]
+    pub fn tags_foreground(&self) -> Option<PyColor> {
+        self.tags_foreground.clone()
+    }
+
+    #[getter]
+    pub fn tags_options(&self) -> Option<PyUnderlineOption> {
+        self.tags_options.clone()
+    }
+
+    #[getter]
+    pub fn highlight(&self) -> Option<PyColor> {
+        self.highlight.clone()
+    }
+
+    #[getter]
+    pub fn find_highlight(&self) -> Option<PyColor> {
+        self.find_highlight.clone()
+    }
+
+    #[getter]
+    pub fn find_highlight_foreground(&self) -> Option<PyColor> {
+        self.find_highlight_foreground.clone()
+    }
+
+    #[getter]
+    pub fn selection_foreground(&self) -> Option<PyColor> {
+        self.selection_foreground.clone()
+    }
+
+    #[getter]
+    pub fn selection_border(&self) -> Option<PyColor> {
+        self.selection_border.clone()
+    }
+
+    #[getter]
+    pub fn inactive_selection(&self) -> Option<PyColor> {
+        self.inactive_selection.clone()
+    }
+
+    #[getter]
+    pub fn inactive_selection_foreground(&self) -> Option<PyColor> {
+        self.inactive_selection_foreground.clone()
+    }
+
+    #[getter]
+    pub fn guide(&self) -> Option<PyColor> {
+        self.guide.clone()
+    }
+
+    #[getter]
+    pub fn active_guide(&self) -> Option<PyColor> {
+        self.active_guide.clone()
+    }
+
+    #[getter]
+    pub fn stack_guide(&self) -> Option<PyColor> {
+        self.stack_guide.clone()
+    }
+
+    #[getter]
+    pub fn shadow(&self) -> Option<PyColor> {
+        self.shadow.clone()
+    }
+
     pub fn __repr__(&self) -> String {
         format!(
-            "ThemeSettings(fg={:?}, bg={:?}, sel_bg={:?})",
+            "ThemeSettings(fg={:?}, bg={:?}, sel_bg={:?}, caret={:?})",
             self.foreground.as_ref().map(|c| c.to_hex()),
             self.background.as_ref().map(|c| c.to_hex()),
-            self.selection_background.as_ref().map(|c| c.to_hex())
+            self.selection_background.as_ref().map(|c| c.to_hex()),
+            self.caret.as_ref().map(|c| c.to_hex())
         )
     }
 }
@@ -69,6 +269,7 @@ pub struct PyThemeItem {
     background: Option<PyColor>,
     font_style: u8,
     style_modifier: String,
+    #[allow(dead_code)]
     style: PyStyleModifier,
 }
 
@@ -224,6 +425,72 @@ impl PyThemeSet {
                         r: c.r, g: c.g, b: c.b, a: 255,
                     }),
                     gutter_background: t.settings.gutter.as_ref().map(|c| PyColor {
+                        r: c.r, g: c.g, b: c.b, a: 255,
+                    }),
+                    // NEW fields
+                    caret: t.settings.caret.as_ref().map(|c| PyColor {
+                        r: c.r, g: c.g, b: c.b, a: 255,
+                    }),
+                    line_highlight: t.settings.line_highlight.as_ref().map(|c| PyColor {
+                        r: c.r, g: c.g, b: c.b, a: 255,
+                    }),
+                    misspelling: t.settings.misspelling.as_ref().map(|c| PyColor {
+                        r: c.r, g: c.g, b: c.b, a: 255,
+                    }),
+                    minimap_border: t.settings.minimap_border.as_ref().map(|c| PyColor {
+                        r: c.r, g: c.g, b: c.b, a: 255,
+                    }),
+                    accent: t.settings.accent.as_ref().map(|c| PyColor {
+                        r: c.r, g: c.g, b: c.b, a: 255,
+                    }),
+                    popup_css: t.settings.popup_css.clone(),
+                    phantom_css: t.settings.phantom_css.clone(),
+                    bracket_contents_foreground: t.settings.bracket_contents_foreground.as_ref().map(|c| PyColor {
+                        r: c.r, g: c.g, b: c.b, a: 255,
+                    }),
+                    bracket_contents_options: to_underline_option(&t.settings.bracket_contents_options),
+                    brackets_foreground: t.settings.brackets_foreground.as_ref().map(|c| PyColor {
+                        r: c.r, g: c.g, b: c.b, a: 255,
+                    }),
+                    brackets_background: t.settings.brackets_background.as_ref().map(|c| PyColor {
+                        r: c.r, g: c.g, b: c.b, a: 255,
+                    }),
+                    brackets_options: to_underline_option(&t.settings.brackets_options),
+                    tags_foreground: t.settings.tags_foreground.as_ref().map(|c| PyColor {
+                        r: c.r, g: c.g, b: c.b, a: 255,
+                    }),
+                    tags_options: to_underline_option(&t.settings.tags_options),
+                    highlight: t.settings.highlight.as_ref().map(|c| PyColor {
+                        r: c.r, g: c.g, b: c.b, a: 255,
+                    }),
+                    find_highlight: t.settings.find_highlight.as_ref().map(|c| PyColor {
+                        r: c.r, g: c.g, b: c.b, a: 255,
+                    }),
+                    find_highlight_foreground: t.settings.find_highlight_foreground.as_ref().map(|c| PyColor {
+                        r: c.r, g: c.g, b: c.b, a: 255,
+                    }),
+                    selection_foreground: t.settings.selection_foreground.as_ref().map(|c| PyColor {
+                        r: c.r, g: c.g, b: c.b, a: 255,
+                    }),
+                    selection_border: t.settings.selection_border.as_ref().map(|c| PyColor {
+                        r: c.r, g: c.g, b: c.b, a: 255,
+                    }),
+                    inactive_selection: t.settings.inactive_selection.as_ref().map(|c| PyColor {
+                        r: c.r, g: c.g, b: c.b, a: 255,
+                    }),
+                    inactive_selection_foreground: t.settings.inactive_selection_foreground.as_ref().map(|c| PyColor {
+                        r: c.r, g: c.g, b: c.b, a: 255,
+                    }),
+                    guide: t.settings.guide.as_ref().map(|c| PyColor {
+                        r: c.r, g: c.g, b: c.b, a: 255,
+                    }),
+                    active_guide: t.settings.active_guide.as_ref().map(|c| PyColor {
+                        r: c.r, g: c.g, b: c.b, a: 255,
+                    }),
+                    stack_guide: t.settings.stack_guide.as_ref().map(|c| PyColor {
+                        r: c.r, g: c.g, b: c.b, a: 255,
+                    }),
+                    shadow: t.settings.shadow.as_ref().map(|c| PyColor {
                         r: c.r, g: c.g, b: c.b, a: 255,
                     }),
                 },

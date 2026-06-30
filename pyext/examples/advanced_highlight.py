@@ -21,7 +21,7 @@ for item in theme.scopes[:5]:
 
 print("\n=== Parsing ===")
 # Parse a line
-parse_state = syntect.ParseState("Python")
+parse_state = syntect.ParseState("Python", ss)
 code = "def hello(name: str) -> str:\n    return f'Hello, {name}!'"
 output = parse_state.parse_line(code, ss)
 

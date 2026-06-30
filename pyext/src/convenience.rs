@@ -4,12 +4,6 @@ use pyo3::prelude::*;
 use crate::style::{PyStyle, PyColor};
 
 
-fn escape_html(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
 
 
 #[pyclass(name = "HighlightResult", skip_from_py_object)]
@@ -36,62 +30,14 @@ impl PyHighlightResult {
         self.terminal_escaped.clone()
     }
 
-    #[allow(unused_assignments)]
-    pub fn as_html(&self, include_bg: &str) -> PyResult<String> {
-        let include_bg = match include_bg {
-            "no" | "false" | "0" => IncludeBg::No,
-            "yes" | "true" | "1" => IncludeBg::Yes,
-            _ => IncludeBg::IfDifferent,
+    pub fn as_html(&self, include_bg: &str, default_bg: Option<PyColor>) -> PyResult<String> {
+        let include_bg_value = match include_bg {
+            "no" | "false" | "0" => crate::util::IncludeBg::No,
+            "yes" | "true" | "1" => crate::util::IncludeBg::Yes,
+            _ => crate::util::IncludeBg::IfDifferent,
         };
 
-        let mut html = String::new();
-        let mut prev_style: Option<PyStyle> = None;
-        let mut span_open = false;
-
-        for (style, text) in &self.tokens {
-            if span_open {
-                if prev_style != Some(style.clone()) {
-                    html.push_str("</span>");
-                    span_open = false;
-                } else {
-                    html.push_str(&escape_html(text));
-                    continue;
-                }
-            }
-
-            html.push_str("<span style=\"");
-
-            let should_include_bg = match include_bg {
-                IncludeBg::Yes => true,
-                IncludeBg::No => false,
-                IncludeBg::IfDifferent => true,
-            };
-
-            if should_include_bg {
-                html.push_str(&format!("background-color:{};", style.background.to_hex()));
-            }
-
-            if style.font_style.bits & 2 != 0 {
-                html.push_str("text-decoration:underline;");
-            }
-            if style.font_style.bits & 1 != 0 {
-                html.push_str("font-weight:bold;");
-            }
-            if style.font_style.bits & 4 != 0 {
-                html.push_str("font-style:italic;");
-            }
-
-            html.push_str(&format!("color:{};\">", style.foreground.to_hex()));
-            html.push_str(&escape_html(text));
-
-            prev_style = Some(style.clone());
-            span_open = true;
-        }
-
-        if span_open {
-            html.push_str("</span>");
-        }
-
+        let html = crate::util::generate_html_from_tokens(&self.tokens, include_bg_value, default_bg);
         Ok(html)
     }
 
@@ -183,9 +129,3 @@ impl PyHighlightResult {
     }
 }
 
-
-enum IncludeBg {
-    No,
-    Yes,
-    IfDifferent,
-}

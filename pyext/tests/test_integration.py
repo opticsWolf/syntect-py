@@ -106,7 +106,7 @@ class TestIntegration:
 
     def test_parse_line_output(self, ss):
         """Test ParseLineOutput with ScopeStackOp objects."""
-        parse_state = syntect.ParseState('Rust')
+        parse_state = syntect.ParseState('Rust', ss)
         output = parse_state.parse_line('fn main() {', ss)
         
         assert len(output.ops) > 0
@@ -133,7 +133,7 @@ class TestIntegration:
         assert chr(0x1b) in escaped
         
         # HTML
-        html = syntect.as_html(tokens, 'if_different')
+        html = syntect.as_html(tokens, 'if_different', None)
         assert '<span' in html
         
         # LaTeX

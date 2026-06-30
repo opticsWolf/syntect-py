@@ -130,7 +130,7 @@ class TestHighlighter:
 class TestParseState:
     def test_parse_line(self):
         ss = syntect.SyntaxSet.load_defaults(True)
-        ps = syntect.ParseState("Rust")
+        ps = syntect.ParseState("Rust", ss)
         output = ps.parse_line("fn main() {}", ss)
         
         assert len(output.ops) > 0
@@ -191,7 +191,7 @@ class TestOutputUtilities:
         hl = syntect.Highlighter(rust, theme)
         tokens = hl.highlight_line("fn main() {}", ss, ts)
         
-        html = syntect.as_html(tokens, "if_different")
+        html = syntect.as_html(tokens, "if_different", None)
         assert "<span" in html
         assert "style=" in html
 
@@ -228,7 +228,7 @@ class TestOutputUtilities:
         )
         
         # Test as_html
-        html = result.as_html("if_different")
+        html = result.as_html("if_different", None)
         assert "<span" in html
         
         # Test as_terminal_escaped

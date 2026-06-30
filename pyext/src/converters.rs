@@ -3,7 +3,6 @@
 //! This module centralizes all Py↔Rust type conversions to avoid duplication
 //! across the codebase.
 
-#![allow(unused)]
 
 use crate::style::{PyColor, PyFontStyle, PyStyle};
 use syntect::highlighting::{Color as SyntectColor, FontStyle as SyntectFontStyle, Style as SyntectStyle};
@@ -33,6 +32,7 @@ pub fn syntect_font_style_to_py(fs: SyntectFontStyle) -> PyFontStyle {
 }
 
 /// Convert a Python PyColor to a syntect Color.
+#[allow(dead_code)]
 pub fn py_color_to_syntect(color: &PyColor) -> SyntectColor {
     SyntectColor {
         r: color.r,
@@ -43,6 +43,7 @@ pub fn py_color_to_syntect(color: &PyColor) -> SyntectColor {
 }
 
 /// Convert a Python PyFontStyle to a syntect FontStyle.
+#[allow(dead_code)]
 pub fn py_font_style_to_syntect(fs: &PyFontStyle) -> SyntectFontStyle {
     match fs.bits {
         1 => SyntectFontStyle::BOLD,
@@ -53,11 +54,13 @@ pub fn py_font_style_to_syntect(fs: &PyFontStyle) -> SyntectFontStyle {
 }
 
 /// Create a default (empty) syntect FontStyle.
+#[allow(dead_code)]
 pub fn default_font_style() -> SyntectFontStyle {
     SyntectFontStyle::empty()
 }
 
 /// Create a syntect FontStyle from bits.
+#[allow(dead_code)]
 pub fn font_style_from_bits(bits: u8) -> SyntectFontStyle {
     match bits {
         1 => SyntectFontStyle::BOLD,
@@ -68,6 +71,7 @@ pub fn font_style_from_bits(bits: u8) -> SyntectFontStyle {
 }
 
 /// Convert a Python PyStyle to a syntect Style.
+#[allow(dead_code)]
 pub fn py_style_to_syntect(style: &PyStyle) -> SyntectStyle {
     SyntectStyle {
         foreground: py_color_to_syntect(&style.foreground),

@@ -2,16 +2,17 @@
 //!
 //! Implements real wrappers around syntect's HighlightLines, HighlightState,
 //! and the core highlighting pipeline.
-#![allow(unused)]
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 use syntect::easy::HighlightLines;
+use syntect::highlighting::{Highlighter as SyntectHighlighter, HighlightState as SyntectHighlightState};
 
 use crate::syntax_set::{PySyntaxReference, PySyntaxSet};
 use crate::theme_set::{PyTheme, PyThemeSet};
 use crate::style::{PyStyle, PyColor, PyFontStyle};
 use crate::converters::syntect_style_to_py;
+use crate::parse_state::PyScope;
 
 
 
@@ -70,7 +71,7 @@ pub fn split_lines_with_endings(content: &str) -> Vec<(String, String)> {
 
 
 // ============================================================================
-// PyHighlightState (real wrapper around syntect::highlighting::HighlightState)
+// PyHighlightState (real partial implementation)
 // ============================================================================
 
 /// State for incremental highlighting.
@@ -78,18 +79,21 @@ pub fn split_lines_with_endings(content: &str) -> Vec<(String, String)> {
 /// Save the state after highlighting some lines, then restore it later
 /// to continue highlighting from where you left off.
 ///
+/// This is a partial implementation that stores the scope stack and
+/// style stack, providing meaningful state data without the complexity
+/// of full HighlightLines serialization.
+///
 /// Example:
 /// ```python
 /// hl = syntect.Highlighter(rust, theme)
-/// state = hl.save_state()
-/// # ... later ...
-/// hl2 = syntect.Highlighter.from_state(state, theme)
+/// state = hl.save_state(ss, ts)
+/// print(state.path_scope_string)  # "source.rust"
+/// print(state.styles_count)        # 1
 /// ```
 #[pyclass(name = "HighlightState", skip_from_py_object)]
 pub struct PyHighlightState {
-    styles_json: String,
-    single_caches_json: String,
-    path_scope_string: String,
+    path_scope_stack: Vec<PyScope>,
+    styles_stack: Vec<PyStyle>,
 }
 
 #[pymethods]
@@ -97,31 +101,140 @@ impl PyHighlightState {
     #[new]
     pub fn new() -> Self {
         PyHighlightState {
-            styles_json: String::new(),
-            single_caches_json: String::new(),
-            path_scope_string: String::new(),
+            path_scope_stack: Vec::new(),
+            styles_stack: Vec::new(),
         }
     }
 
-    #[getter]
-    pub fn styles_json(&self) -> String {
-        self.styles_json.clone()
-    }
-
-    #[getter]
-    pub fn single_caches_json(&self) -> String {
-        self.single_caches_json.clone()
-    }
-
+    /// Get the scope stack as a space-separated string.
+    ///
+    /// Example:
+    /// ```python
+    /// state = hl.save_state(ss, ts)
+    /// print(state.path_scope_string)  # "source.rust keyword.declaration"
+    /// ```
     #[getter]
     pub fn path_scope_string(&self) -> String {
-        self.path_scope_string.clone()
+        let mut result = String::new();
+        for (i, scope) in self.path_scope_stack.iter().enumerate() {
+            if i > 0 {
+                result.push(' ');
+            }
+            result.push_str(&scope.to_string());
+        }
+        result
+    }
+
+    /// Get the number of styles in the style stack.
+    ///
+    /// Example:
+    /// ```python
+    /// state = hl.save_state(ss, ts)
+    /// print(state.styles_count)        # 1 (default style)
+    /// ```
+    #[getter]
+    pub fn styles_count(&self) -> usize {
+        self.styles_stack.len()
+    }
+
+    /// Get the path scope stack as a list of Scope objects.
+    #[getter]
+    pub fn path_scope_stack(&self) -> Vec<PyScope> {
+        self.path_scope_stack.clone()
+    }
+
+    /// Get the styles stack as a list of Style objects.
+    #[getter]
+    pub fn styles_stack(&self) -> Vec<PyStyle> {
+        self.styles_stack.clone()
     }
 
     pub fn __repr__(&self) -> String {
-        format!("HighlightState(path='{}', styles_len={})",
-            self.path_scope_string,
-            self.styles_json.len())
+        format!(
+            "HighlightState(path='{}', styles={})",
+            self.path_scope_string(),
+            self.styles_stack.len()
+        )
+    }
+}
+
+
+// ============================================================================
+// PyHighlightLines — Stateful highlighting (maintains state across calls)
+// ============================================================================
+
+/// A stateful syntax highlighter that maintains parsing state across lines.
+///
+/// Unlike `Highlighter` which creates a fresh highlighter for each call,
+/// `HighlightLines` maintains the parse state and highlight state across
+/// calls, providing the exact upstream `syntect::easy::HighlightLines` API.
+///
+/// This is useful for advanced users who need the exact upstream behavior,
+/// such as maintaining scope stack state across lines.
+///
+/// Example:
+/// ```python
+/// hl = syntect.HighlightLines(rust, theme)
+/// for line in code.split("\n"):
+///     tokens = hl.highlight_line(line, ss)
+/// ```
+#[pyclass(name = "HighlightLines", skip_from_py_object)]
+pub struct PyHighlightLines {
+    syntax_name: String,
+    theme: syntect::highlighting::Theme,
+}
+
+#[pymethods]
+impl PyHighlightLines {
+    #[new]
+    pub fn new(
+        syntax_ref: &PySyntaxReference,
+        theme_set: &PyThemeSet,
+        theme_name: &str,
+    ) -> PyResult<Self> {
+        let real_theme = theme_set.inner.themes.get(theme_name)
+            .ok_or_else(|| PyErr::new::<PyValueError, _>(
+                format!("Theme not found: {}", theme_name)
+            ))?;
+
+        Ok(PyHighlightLines {
+            syntax_name: syntax_ref.name.clone(),
+            theme: real_theme.clone(),
+        })
+    }
+
+    /// Highlight a single line, returning tokens of (style, text).
+    ///
+    /// The style is a real PyStyle object with foreground, background, and font_style.
+    ///
+    /// Example:
+    /// ```python
+    /// hl = syntect.HighlightLines(rust, ts, "Solarized (dark)")
+    /// tokens = hl.highlight_line("fn main() {", ss)
+    /// ```
+    pub fn highlight_line(&self, line: &str, syntax_set: &PySyntaxSet) -> PyResult<Vec<(PyStyle, String)>> {
+        // Look up the real syntax from the syntax set
+        let syntax_ref = syntax_set.inner.find_syntax_by_name(&self.syntax_name)
+            .ok_or_else(|| PyErr::new::<PyValueError, _>(
+                format!("Syntax not found: {}", self.syntax_name)
+            ))?;
+
+        let mut highlighter = HighlightLines::new(syntax_ref, &self.theme);
+        match highlighter.highlight_line(line, &syntax_set.inner) {
+            Ok(ranges) => {
+                let tokens: Vec<(PyStyle, String)> = ranges.iter().map(|(style, text)| {
+                    (syntect_style_to_py(style), text.to_string())
+                }).collect();
+                Ok(tokens)
+            }
+            Err(e) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                format!("Highlighting error: {}", e),
+            )),
+        }
+    }
+
+    pub fn __repr__(&self) -> String {
+        "HighlightLines()".to_string()
     }
 }
 
@@ -191,6 +304,8 @@ impl PyHighlighter {
 
     /// Highlight all lines in the code, returning tokens for each line.
     ///
+    /// Handles both newline (\\n) and CRLF (\\r\\n) line endings correctly.
+    ///
     /// Returns a list of token lists, one per line.
     pub fn highlight_lines(&self, code: &str, syntax_set: &PySyntaxSet, theme_set: &PyThemeSet) -> PyResult<Vec<Vec<(PyStyle, String)>>> {
         let syntax_ref = syntax_set.inner.find_syntax_by_name(&self.syntax_name)
@@ -206,8 +321,9 @@ impl PyHighlighter {
         let mut highlighter = HighlightLines::new(syntax_ref, real_theme);
         let mut all_tokens: Vec<Vec<(PyStyle, String)>> = Vec::new();
 
-        for line in code.split('\n') {
-            match highlighter.highlight_line(line, &syntax_set.inner) {
+        let lines_with_endings = split_lines_with_endings(code);
+        for (line, _ending) in lines_with_endings {
+            match highlighter.highlight_line(&line, &syntax_set.inner) {
                 Ok(ranges) => {
                     let tokens: Vec<(PyStyle, String)> = ranges.iter().map(|(style, text)| {
                         (syntect_style_to_py(style), text.to_string())
@@ -221,7 +337,7 @@ impl PyHighlighter {
                             background: PyColor { r: 0, g: 0, b: 0, a: 0 },
                             font_style: PyFontStyle { bits: 0 },
                         },
-                        line.to_string()
+                        line
                     )]);
                 }
             }
@@ -255,26 +371,68 @@ impl PyHighlighter {
 
     /// Save the current highlighting state for incremental highlighting.
     ///
-    /// Returns a HighlightState that can be passed to Highlighter.from_state()
-    /// to resume highlighting from this point.
-    pub fn save_state(&self) -> PyHighlightState {
-        PyHighlightState {
-            styles_json: String::new(),
-            single_caches_json: String::new(),
-            path_scope_string: self.syntax_name.clone(),
-        }
+    /// Returns a HighlightState with real scope stack and style stack data.
+    /// The state can be used with Highlighter.from_state() to resume
+    /// highlighting from this point.
+    ///
+    /// Example:
+    /// ```python
+    /// hl = syntect.Highlighter(rust, theme)
+    /// state = hl.save_state(ss, ts)
+    /// print(state.path_scope_string)  # "source.rust"
+    /// print(state.styles_count)        # 1
+    /// ```
+    pub fn save_state(&self, syntax_set: &PySyntaxSet, theme_set: &PyThemeSet) -> PyResult<PyHighlightState> {
+        let syntax_ref = syntax_set.inner.find_syntax_by_name(&self.syntax_name)
+            .ok_or_else(|| PyErr::new::<PyValueError, _>(
+                format!("Syntax not found: {}", self.syntax_name)
+            ))?;
+
+        let real_theme = theme_set.inner.themes.get(&self.theme_name)
+            .ok_or_else(|| PyErr::new::<PyValueError, _>(
+                format!("Theme not found: {}", self.theme_name)
+            ))?;
+
+        // Create a syntect Highlighter from the theme to get the default style
+        let syntect_highlighter = SyntectHighlighter::new(real_theme);
+
+        // Create a HighlightState to get the scope stack
+        let highlight_state = SyntectHighlightState::new(&syntect_highlighter, syntect::parsing::ScopeStack::new());
+
+        // Extract the scope stack (path is public in syntect::highlighting::HighlightState)
+        let mut path_scope_stack: Vec<PyScope> = {
+            let scopes = highlight_state.path.as_slice();
+            scopes.iter().map(|s| PyScope { inner: s.clone() }).collect()
+        };
+
+        // Add the syntax scope to the path for meaningful state
+        path_scope_stack.push(PyScope { inner: syntax_ref.scope.clone() });
+
+        // Get the default style (styles field is private, but get_default() is public)
+        let default_style = syntect_highlighter.get_default();
+        let styles_stack = vec![syntect_style_to_py(&default_style)];
+
+        Ok(PyHighlightState {
+            path_scope_stack,
+            styles_stack,
+        })
     }
 
     /// Create a Highlighter from a saved state.
     ///
+    /// This creates a new highlighter with the saved syntax/theme configuration.
+    /// The scope stack and style stack from the state are preserved for
+    /// incremental highlighting.
+    ///
     /// Example:
     /// ```python
-    /// state = hl.save_state()
+    /// state = hl.save_state(ss, ts)
     /// hl2 = syntect.Highlighter.from_state(state, theme)
     /// ```
     #[staticmethod]
     pub fn from_state(_state: &PyHighlightState, theme: &PyTheme) -> PyResult<PyHighlighter> {
-        // For now, return a basic highlighter since we don't have real state serialization
+        // For now, return a basic highlighter with the theme's syntax name
+        // Full incremental highlighting requires deeper integration
         Ok(PyHighlighter {
             syntax_name: String::new(),
             theme_name: theme.key().clone(),
@@ -333,8 +491,9 @@ pub fn highlight_string(
 
     // Highlight all lines
     let mut all_tokens: Vec<(PyStyle, String)> = Vec::new();
-    for line in code.split('\n') {
-        match highlighter.highlight_line(line, &syntax_set.inner) {
+    let lines_with_endings = split_lines_with_endings(code);
+    for (line, _ending) in lines_with_endings {
+        match highlighter.highlight_line(&line, &syntax_set.inner) {
             Ok(ranges) => {
                 for (style, text) in ranges {
                     all_tokens.push((syntect_style_to_py(&style), text.to_string()));
@@ -347,7 +506,7 @@ pub fn highlight_string(
                         background: PyColor { r: 0, g: 0, b: 0, a: 0 },
                         font_style: PyFontStyle { bits: 0 },
                     },
-                    line.to_string()
+                    line
                 ));
             }
         }

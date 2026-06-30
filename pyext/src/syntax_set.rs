@@ -12,10 +12,14 @@ use crate::errors;
 ///
 /// Example:
 /// ```python
-/// ss = syntect.SyntaxSet.load_defaults()
+/// ss = syntect.SyntaxSet.load_defaults(True)
 /// rust = ss.find_syntax_by_name("Rust")
-/// print(rust.name)  # "Rust"
-/// print(rust.scope)  # "source.rust"
+/// print(rust.name)           # "Rust"
+/// print(rust.scope)          # "source.rust"
+/// print(rust.file_extensions)  # ["rs"]
+/// print(rust.first_line_match) # Optional regex pattern
+/// print(rust.version)          # 2 (sublime-syntax v2)
+/// print(rust.variables)        # {"base": "$base"}
 /// ```
 #[pyclass(skip_from_py_object)]
 pub struct PySyntaxReference {
@@ -23,6 +27,9 @@ pub struct PySyntaxReference {
     pub file_extensions: Vec<String>,
     pub scope: String,
     pub hidden: bool,
+    pub first_line_match: Option<String>,
+    pub version: u32,
+    pub variables: Vec<(String, String)>,
 }
 
 #[pymethods]
@@ -47,8 +54,36 @@ impl PySyntaxReference {
         self.hidden
     }
 
+    /// Get the first line regex pattern, if defined.
+    ///
+    /// This is a regex that matches the first line of files using this syntax.
+    #[getter]
+    pub fn first_line_match(&self) -> Option<String> {
+        self.first_line_match.clone()
+    }
+
+    /// Get the sublime-syntax format version (1 or 2).
+    ///
+    /// Version 2 adds support for more features like `first_line_match`
+    /// and `variables`.
+    #[getter]
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
+    /// Get the variables defined in this syntax definition.
+    ///
+    /// Variables are key-value pairs used for substitution in scope patterns.
+    #[getter]
+    pub fn variables(&self) -> Vec<(String, String)> {
+        self.variables.clone()
+    }
+
     pub fn __repr__(&self) -> String {
-        format!("SyntaxReference(name='{}', scope='{}')", self.name, self.scope)
+        format!(
+            "SyntaxReference(name='{}', scope='{}', version={})",
+            self.name, self.scope, self.version
+        )
     }
 }
 
@@ -122,7 +157,7 @@ impl PySyntaxSetBuilder {
 ///
 /// Example:
 /// ```python
-/// ss = syntect.SyntaxSet.load_defaults()
+/// ss = syntect.SyntaxSet.load_defaults(True)
 /// rust = ss.find_syntax_by_name("Rust")
 /// py = ss.find_syntax_by_extension("py")
 /// ```
@@ -183,7 +218,7 @@ impl PySyntaxSet {
     ///
     /// Example:
     /// ```python
-    /// ss = syntect.SyntaxSet.load_defaults()
+    /// ss = syntect.SyntaxSet.load_defaults(True)
     /// builder = ss.into_builder()
     /// builder.add_from_folder("/custom/syntaxes", False)
     /// ss = builder.build()
@@ -207,6 +242,9 @@ impl PySyntaxSet {
             file_extensions: s.file_extensions.clone(),
             scope: s.scope.to_string(),
             hidden: s.hidden,
+            first_line_match: s.first_line_match.clone(),
+            version: s.version,
+            variables: s.variables.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
         })
     }
 
@@ -216,6 +254,9 @@ impl PySyntaxSet {
             file_extensions: s.file_extensions.clone(),
             scope: s.scope.to_string(),
             hidden: s.hidden,
+            first_line_match: s.first_line_match.clone(),
+            version: s.version,
+            variables: s.variables.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
         })
     }
 
@@ -226,6 +267,9 @@ impl PySyntaxSet {
                 file_extensions: s.file_extensions.clone(),
                 scope: s.scope.to_string(),
                 hidden: s.hidden,
+                first_line_match: s.first_line_match.clone(),
+                version: s.version,
+                variables: s.variables.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
             }),
             Err(_) => None,
         }
@@ -238,6 +282,9 @@ impl PySyntaxSet {
                 file_extensions: s.file_extensions.clone(),
                 scope: s.scope.to_string(),
                 hidden: s.hidden,
+                first_line_match: s.first_line_match.clone(),
+                version: s.version,
+                variables: s.variables.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
             })),
             Ok(None) => Ok(None),
             Err(_) => Ok(None),
@@ -251,6 +298,9 @@ impl PySyntaxSet {
             file_extensions: s.file_extensions.clone(),
             scope: s.scope.to_string(),
             hidden: s.hidden,
+            first_line_match: s.first_line_match.clone(),
+            version: s.version,
+            variables: s.variables.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
         }
     }
 
@@ -260,6 +310,9 @@ impl PySyntaxSet {
             file_extensions: s.file_extensions.clone(),
             scope: s.scope.to_string(),
             hidden: s.hidden,
+            first_line_match: s.first_line_match.clone(),
+            version: s.version,
+            variables: s.variables.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
         }).collect()
     }
 
@@ -286,5 +339,50 @@ impl PySyntaxSet {
 
     pub fn __repr__(&self) -> String {
         format!("SyntaxSet(syntaxes={})", self.inner.syntaxes().len())
+    }
+
+    /// Find all context references that are not linked to any syntax definition.
+    ///
+    /// This is useful for debugging syntax definitions that reference contexts
+    /// that don't exist.
+    ///
+    /// Returns a list of unlinked context reference strings.
+    ///
+    /// Example:
+    /// ```python
+    /// ss = syntect.SyntaxSet.load_defaults(True)
+    /// unlinked = ss.find_unlinked_contexts()
+    /// print(unlinked)  # [] if all contexts are linked
+    /// ```
+    pub fn find_unlinked_contexts(&self) -> Vec<String> {
+        self.inner.find_unlinked_contexts().into_iter().collect()
+    }
+
+    /// Get the metadata loaded from `.tmPreferences` files.
+    ///
+    /// Returns None if no metadata was loaded or if the metadata feature
+    /// is not enabled.
+    ///
+    /// Example:
+    /// ```python
+    /// ss = syntect.SyntaxSet.load_defaults(True)
+    /// metadata = ss.metadata
+    /// if metadata:
+    ///     for mset in metadata.sets:
+    ///         print(mset.selector_string, mset.items.line_comment)
+    /// ```
+    #[cfg(feature = "metadata")]
+    pub fn metadata(&self) -> Option<crate::metadata::PyMetadata> {
+        if self.inner.metadata.scoped_metadata.is_empty() {
+            None
+        } else {
+            Some(crate::metadata::convert_metadata(&self.inner.metadata))
+        }
+    }
+
+    #[cfg(not(feature = "metadata"))]
+    pub fn metadata(&self) -> Option<crate::metadata::PyMetadata> {
+        // Metadata feature not enabled
+        None
     }
 }

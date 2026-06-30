@@ -1,4 +1,7 @@
-//! Python bindings for syntect's HTML output utilities.
+#!/usr/bin/env python
+"""Write html.rs file"""
+
+content = r'''//! Python bindings for syntect's HTML output utilities.
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
@@ -8,10 +11,9 @@ use syntect::html::{
     css_for_theme_with_class_style,
     start_highlighted_html_snippet,
 };
-use syntect::parsing::Scope as SyntectScope;
 use crate::syntax_set::{PySyntaxReference, PySyntaxSet};
 use crate::theme_set::{PyTheme, PyThemeSet};
-use crate::style::{PyStyle, PyColor};
+use crate::style::PyStyle;
 
 
 #[pyclass(name = "ClassStyle")]
@@ -107,56 +109,11 @@ pub fn css_for_theme(theme: &PyTheme, class_style: &str) -> PyResult<String> {
         _ => SyntectClassStyle::SpacedPrefixed { prefix: "syn-" },
     };
 
-    // Build real syntect theme scopes from PyTheme data
-    let scopes: Vec<syntect::highlighting::ThemeItem> = theme.scopes().iter().map(|item| {
-        let mut style = syntect::highlighting::StyleModifier::default();
-
-        if let Some(fg) = item.foreground() {
-            if let Ok(color) = PyColor::from_hex(&fg) {
-                style.foreground = Some(syntect::highlighting::Color {
-                    r: color.r(),
-                    g: color.g(),
-                    b: color.b(),
-                    a: color.a(),
-                });
-            }
-        }
-
-        if let Some(bg) = item.background() {
-            if let Ok(color) = PyColor::from_hex(&bg) {
-                style.background = Some(syntect::highlighting::Color {
-                    r: color.r(),
-                    g: color.g(),
-                    b: color.b(),
-                    a: color.a(),
-                });
-            }
-        }
-
-        let fs = item.font_style();
-        if fs & 1 != 0 {
-            style.font_style = Some(syntect::highlighting::FontStyle::BOLD);
-        } else if fs & 2 != 0 {
-            style.font_style = Some(syntect::highlighting::FontStyle::UNDERLINE);
-        } else if fs & 4 != 0 {
-            style.font_style = Some(syntect::highlighting::FontStyle::ITALIC);
-        }
-
-        // Parse scope string to extract scope atoms
-        let scope_str = item.scope();
-        let scope_selectors = parse_scope_selectors(&scope_str);
-
-        syntect::highlighting::ThemeItem {
-            scope: scope_selectors,
-            style,
-        }
-    }).collect();
-
     let real_theme = syntect::highlighting::Theme {
         name: Some(theme.name().clone()),
         author: Some(theme.author().clone()),
         settings: syntect::highlighting::ThemeSettings::default(),
-        scopes,
+        scopes: Vec::new(),
     };
 
     css_for_theme_with_class_style(&real_theme, syntect_style)
@@ -193,7 +150,6 @@ pub fn highlighted_html_for_string_py(
 
 
 #[pyfunction]
-#[allow(unused_assignments)]
 pub fn highlighted_html_at_line_and_column_number(
     code: &str,
     syntax_ref: &PySyntaxReference,
@@ -231,7 +187,7 @@ pub fn highlighted_html_at_line_and_column_number(
                     let py_style = PyStyle {
                         foreground: crate::style::PyColor { r: style.foreground.r, g: style.foreground.g, b: style.foreground.b, a: style.foreground.a },
                         background: crate::style::PyColor { r: style.background.r, g: style.background.g, b: style.background.b, a: style.background.a },
-                        font_style: crate::style::PyFontStyle { bits: style.font_style.bits() },
+                        font_style: crate::style::PyFontStyle { bits: style.font_style },
                     };
 
                     if span_open {
@@ -279,46 +235,8 @@ pub fn highlighted_html_at_line_and_column_number(
     html.push_str("</pre>\n");
     Ok(html)
 }
+'''
 
-
-// ============================================================================
-// Helper: Parse scope selectors from string representation
-// ============================================================================
-
-/// Parse a scope string like "ScopeSelectors { selectors: [ScopeSelector { path: ScopeStack { ... scopes: [<scope1> <scope2>] } }] }"
-/// and extract the scope atoms to create proper ScopeSelectors.
-fn parse_scope_selectors(scope_str: &str) -> syntect::highlighting::ScopeSelectors {
-    let mut selectors: Vec<syntect::highlighting::ScopeSelector> = Vec::new();
-    
-    // Extract all <scope> patterns from the string
-    let mut in_scopes_section = false;
-    let mut current_scopes: Vec<String> = Vec::new();
-    
-    for ch in scope_str.chars() {
-        if ch == '<' {
-            in_scopes_section = true;
-        }
-        if in_scopes_section {
-            if ch == '>' {
-                in_scopes_section = false;
-            } else if ch != ' ' && ch != '\n' && ch != '\t' {
-                current_scopes.push(ch.to_string());
-            }
-        }
-        if !in_scopes_section && (ch == ']' || ch == '}') && !current_scopes.is_empty() {
-            // End of scopes section
-            let scope_str: String = current_scopes.iter().cloned().collect();
-            if let Ok(scope) = SyntectScope::new(&scope_str) {
-                selectors.push(syntect::highlighting::ScopeSelector {
-                    path: syntect::parsing::ScopeStack::from_vec(vec![scope]),
-                    excludes: Vec::new(),
-                });
-            }
-            current_scopes.clear();
-        }
-    }
-    
-    syntect::highlighting::ScopeSelectors {
-        selectors,
-    }
-}
+with open('D:/User/Documents/Python/syntect-py/pyext/src/html.rs', 'w') as f:
+    f.write(content)
+print('html.rs written successfully')

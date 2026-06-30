@@ -2,9 +2,8 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
-use syntect::highlighting::{Color, FontStyle, Style, StyleModifier};
 
-#[pyclass(name = "Color")]
+#[pyclass(name = "Color", from_py_object)]
 #[derive(Clone, PartialEq)]
 pub struct PyColor {
     pub r: u8,
@@ -73,7 +72,7 @@ impl PyColor {
     }
 }
 
-#[pyclass(name = "FontStyle")]
+#[pyclass(name = "FontStyle", from_py_object)]
 #[derive(Clone, PartialEq)]
 pub struct PyFontStyle {
     pub bits: u8,
@@ -138,7 +137,7 @@ impl PyFontStyle {
     }
 }
 
-#[pyclass(name = "Style")]
+#[pyclass(name = "Style", from_py_object)]
 #[derive(Clone, PartialEq)]
 pub struct PyStyle {
     pub foreground: PyColor,
@@ -201,7 +200,7 @@ impl PyStyle {
     }
 }
 
-#[pyclass(name = "StyleModifier")]
+#[pyclass(name = "StyleModifier", from_py_object)]
 #[derive(Clone, PartialEq)]
 pub struct PyStyleModifier {
     foreground: Option<PyColor>,
@@ -211,6 +210,21 @@ pub struct PyStyleModifier {
 
 #[pymethods]
 impl PyStyleModifier {
+    #[getter]
+    pub fn foreground(&self) -> Option<PyColor> {
+        self.foreground.clone()
+    }
+
+    #[getter]
+    pub fn background(&self) -> Option<PyColor> {
+        self.background.clone()
+    }
+
+    #[getter]
+    pub fn font_style(&self) -> Option<PyFontStyle> {
+        self.font_style.clone()
+    }
+
     #[new]
     pub fn new(
         foreground: Option<PyColor>,
@@ -218,5 +232,14 @@ impl PyStyleModifier {
         font_style: Option<PyFontStyle>,
     ) -> Self {
         PyStyleModifier { foreground, background, font_style }
+    }
+
+    pub fn __repr__(&self) -> String {
+        format!(
+            "StyleModifier(fg={:?}, bg={:?}, font={:?})",
+            self.foreground.as_ref().map(|c| c.to_hex()),
+            self.background.as_ref().map(|c| c.to_hex()),
+            self.font_style.as_ref().map(|fs| fs.bits)
+        )
     }
 }

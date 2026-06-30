@@ -2,7 +2,6 @@
 
 use pyo3::prelude::*;
 use pyo3::exceptions::PyOSError;
-use std::io::BufRead;
 use crate::errors;
 use crate::syntax_set::PySyntaxSet;
 use crate::theme_set::PyThemeSet;

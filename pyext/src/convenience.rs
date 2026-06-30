@@ -1,8 +1,7 @@
 //! Phase 5: Convenience & Polish - Enhanced HighlightResult with output methods
 
 use pyo3::prelude::*;
-use pyo3::exceptions::PyValueError;
-use crate::style::{PyStyle, PyColor, PyFontStyle};
+use crate::style::{PyStyle, PyColor};
 
 
 fn escape_html(text: &str) -> String {
@@ -13,7 +12,7 @@ fn escape_html(text: &str) -> String {
 }
 
 
-#[pyclass(name = "HighlightResult")]
+#[pyclass(name = "HighlightResult", skip_from_py_object)]
 pub struct PyHighlightResult {
     pub tokens: Vec<(PyStyle, String)>,
     pub html: String,
@@ -37,6 +36,7 @@ impl PyHighlightResult {
         self.terminal_escaped.clone()
     }
 
+    #[allow(unused_assignments)]
     pub fn as_html(&self, include_bg: &str) -> PyResult<String> {
         let include_bg = match include_bg {
             "no" | "false" | "0" => IncludeBg::No,

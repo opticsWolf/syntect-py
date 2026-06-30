@@ -17,7 +17,7 @@ use crate::errors;
 /// print(rust.name)  # "Rust"
 /// print(rust.scope)  # "source.rust"
 /// ```
-#[pyclass]
+#[pyclass(skip_from_py_object)]
 pub struct PySyntaxReference {
     pub name: String,
     pub file_extensions: Vec<String>,
@@ -64,7 +64,7 @@ impl PySyntaxReference {
 /// builder.add_from_folder("/path/to/syntaxes", True)
 /// ss = builder.build()
 /// ```
-#[pyclass(name = "SyntaxSetBuilder")]
+#[pyclass(name = "SyntaxSetBuilder", skip_from_py_object)]
 pub struct PySyntaxSetBuilder {
     inner: syntect::parsing::SyntaxSetBuilder,
 }
@@ -126,7 +126,7 @@ impl PySyntaxSetBuilder {
 /// rust = ss.find_syntax_by_name("Rust")
 /// py = ss.find_syntax_by_extension("py")
 /// ```
-#[pyclass(name = "SyntaxSet")]
+#[pyclass(name = "SyntaxSet", skip_from_py_object)]
 pub struct PySyntaxSet {
     pub inner: SyntectSyntaxSet,
 }
@@ -240,9 +240,7 @@ impl PySyntaxSet {
                 hidden: s.hidden,
             })),
             Ok(None) => Ok(None),
-            Err(e) => Err(PyErr::new::<pyo3::exceptions::PyOSError, _>(
-                format!("IO error: {}", e),
-            )),
+            Err(_) => Ok(None),
         }
     }
 

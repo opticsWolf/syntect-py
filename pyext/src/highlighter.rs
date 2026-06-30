@@ -6,8 +6,7 @@
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
 use syntect::easy::HighlightLines;
-use syntect::highlighting::{Theme, Style as SyntectStyle, Color as SyntectColor};
-use syntect::parsing::SyntaxReference;
+use syntect::highlighting::Style as SyntectStyle;
 use crate::syntax_set::{PySyntaxReference, PySyntaxSet};
 use crate::theme_set::{PyTheme, PyThemeSet};
 use crate::style::{PyStyle, PyColor, PyFontStyle};
@@ -35,21 +34,6 @@ fn syntect_style_to_py(style: &SyntectStyle) -> PyStyle {
     }
 }
 
-fn syntect_color_to_py(color: &SyntectColor) -> PyColor {
-    PyColor {
-        r: color.r,
-        g: color.g,
-        b: color.b,
-        a: color.a,
-    }
-}
-
-fn syntect_font_style_to_py(fs: syntect::highlighting::FontStyle) -> PyFontStyle {
-    PyFontStyle { bits: fs.bits() }
-}
-
-
-
 
 // ============================================================================
 // PyHighlightState (real wrapper around syntect::highlighting::HighlightState)
@@ -67,10 +51,10 @@ fn syntect_font_style_to_py(fs: syntect::highlighting::FontStyle) -> PyFontStyle
 /// # ... later ...
 /// hl2 = syntect.Highlighter.from_state(state, theme)
 /// ```
-#[pyclass(name = "HighlightState")]
+#[pyclass(name = "HighlightState", skip_from_py_object)]
 pub struct PyHighlightState {
-    styles_json: Vec<String>,
-    single_caches_json: Vec<String>,
+    styles_json: String,
+    single_caches_json: String,
     path_scope_string: String,
 }
 
@@ -79,14 +63,31 @@ impl PyHighlightState {
     #[new]
     pub fn new() -> Self {
         PyHighlightState {
-            styles_json: Vec::new(),
-            single_caches_json: Vec::new(),
+            styles_json: String::new(),
+            single_caches_json: String::new(),
             path_scope_string: String::new(),
         }
     }
 
+    #[getter]
+    pub fn styles_json(&self) -> String {
+        self.styles_json.clone()
+    }
+
+    #[getter]
+    pub fn single_caches_json(&self) -> String {
+        self.single_caches_json.clone()
+    }
+
+    #[getter]
+    pub fn path_scope_string(&self) -> String {
+        self.path_scope_string.clone()
+    }
+
     pub fn __repr__(&self) -> String {
-        format!("HighlightState(styles={}, path='{}')", self.styles_json.len(), self.path_scope_string)
+        format!("HighlightState(path='{}', styles_len={})",
+            self.path_scope_string,
+            self.styles_json.len())
     }
 }
 
@@ -103,11 +104,10 @@ impl PyHighlightState {
 /// tokens = hl.highlight_line("fn main() {", ss, ts)
 /// # Returns: [(PyStyle, "fn"), (PyStyle, " "), (PyStyle, "main"), ...]
 /// ```
-#[pyclass(name = "Highlighter")]
+#[pyclass(name = "Highlighter", skip_from_py_object)]
 pub struct PyHighlighter {
     syntax_name: String,
     theme_name: String,
-    theme: Theme,
 }
 
 #[pymethods]
@@ -117,12 +117,6 @@ impl PyHighlighter {
         PyHighlighter {
             syntax_name: syntax_ref.name.clone(),
             theme_name: theme.key().clone(),
-            theme: Theme {
-                name: Some(theme.name().clone()),
-                author: Some(theme.author().clone()),
-                settings: syntect::highlighting::ThemeSettings::default(),
-                scopes: vec![],
-            },
         }
     }
 
@@ -208,8 +202,8 @@ impl PyHighlighter {
     /// to resume highlighting from this point.
     pub fn save_state(&self) -> PyHighlightState {
         PyHighlightState {
-            styles_json: Vec::new(),
-            single_caches_json: Vec::new(),
+            styles_json: String::new(),
+            single_caches_json: String::new(),
             path_scope_string: self.syntax_name.clone(),
         }
     }
@@ -227,12 +221,6 @@ impl PyHighlighter {
         Ok(PyHighlighter {
             syntax_name: String::new(),
             theme_name: theme.key().clone(),
-            theme: Theme {
-                name: Some(theme.name().clone()),
-                author: Some(theme.author().clone()),
-                settings: syntect::highlighting::ThemeSettings::default(),
-                scopes: vec![],
-            },
         })
     }
 
@@ -312,8 +300,9 @@ pub fn highlight_string(
     let html = syntect::html::highlighted_html_for_string(code, &syntax_set.inner, syntax_ref, theme)
         .unwrap_or_else(|_| format!("<pre><code>{}</code></pre>", code.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")));
 
-    // Generate terminal escaped (simplified)
-    let terminal_escaped = code.to_string();
+    // Generate terminal escaped using real implementation
+    let terminal_escaped = crate::util::as_terminal_escaped_impl(&all_tokens, false)
+        .unwrap_or_else(|e| format!("Error: {}", e));
 
     Ok(crate::convenience::PyHighlightResult {
         tokens: all_tokens,

@@ -8,7 +8,7 @@ use crate::errors;
 // PyThemeSettings (read-only wrapper)
 // ============================================================================
 
-#[pyclass(name = "ThemeSettings")]
+#[pyclass(name = "ThemeSettings", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyThemeSettings {
     foreground: Option<String>,
@@ -57,7 +57,7 @@ impl PyThemeSettings {
 // PyThemeItem
 // ============================================================================
 
-#[pyclass(name = "ThemeItem")]
+#[pyclass(name = "ThemeItem", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyThemeItem {
     scope: String,
@@ -104,7 +104,7 @@ impl PyThemeItem {
 // PyTheme (read-only wrapper)
 // ============================================================================
 
-#[pyclass(name = "Theme")]
+#[pyclass(name = "Theme", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyTheme {
     key: String,
@@ -150,7 +150,7 @@ impl PyTheme {
 // PyThemeSet
 // ============================================================================
 
-#[pyclass(name = "ThemeSet")]
+#[pyclass(name = "ThemeSet", skip_from_py_object)]
 pub struct PyThemeSet {
     pub inner: SyntectThemeSet,
 }

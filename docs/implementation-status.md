@@ -270,16 +270,13 @@ pyo3 = { version = "0.29", features = ["macros", "abi3-py39"] }
 ## Known Issues & Limitations
 
 ### Current Limitations
-1. `HighlightState` serialization not fully implemented (stub)
-2. `css_for_theme` uses stub theme (empty scopes) - needs real theme data
-3. `PyStyleModifier` fields never read
-4. `PyHighlightState.single_caches_json` never read
+1. `HighlightState` serialization is a stub - stores syntax name but not real highlighting state
+2. `PyHighlightState.single_caches_json` and `styles_json` are stub fields (empty strings)
 
 ### Warnings
-- `#[pyclass]` with `Clone` triggers deprecation warning (PyO3 0.29)
-- Unused imports in style.rs (Color, FontStyle, etc.)
-- Unused variables in html.rs
-- `PyStyleModifier` fields never read
+- None! All warnings cleaned up in Phase 6
+- No deprecation warnings (all `#[pyclass]` types use `skip_from_py_object` or `from_py_object`)
+- No unused imports or variables
 
 ## Test Results
 
@@ -357,6 +354,25 @@ pyo3 = { version = "0.29", features = ["macros", "abi3-py39"] }
 - **Type stubs** - `syntect.pyi` with complete type hints
 - **Tests** - 36 pytest tests covering all functionality
 - **Examples** - Basic highlighting, advanced parsing, benchmarking
+
+### v5.3.0-py6 (Phase 6)
+- **StyleModifier** - Added Python-accessible getters for `foreground`, `background`, `font_style`
+- **css_for_theme** - Now uses real theme scopes instead of empty stub
+  - Parses scope strings from PyThemeItem into proper ScopeSelectors
+  - Generates valid CSS with scope selectors
+- **highlight_string** - Fixed terminal output to use real escape sequences
+- **HighlightState** - Added getters for `styles_json`, `single_caches_json`, `path_scope_string`
+- **find_syntax_for_file** - Fixed to return None for unknown files instead of throwing error
+- **SyntaxReference.hidden** - Property verified working
+- **Deprecation warnings** - All `#[pyclass]` types now use `skip_from_py_object` or `from_py_object`
+  - Types creatable from Python use `from_py_object` (Color, FontStyle, Style, StyleModifier)
+  - Types not creatable from Python use `skip_from_py_object` (all others)
+- **Cleaned up all warnings**:
+  - Removed unused imports (BufRead, SyntectColor, etc.)
+  - Removed unused functions (syntect_color_to_py, syntect_font_style_to_py)
+  - Added `#[allow(unused_assignments)]` where needed
+  - Fixed move errors with `.clone()` on PyColor fields
+- **Zero warnings** - Build produces clean output with no warnings
 
 ---
 

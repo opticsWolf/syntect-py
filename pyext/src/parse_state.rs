@@ -56,7 +56,7 @@ fn parse_output_to_python(output: SyntectParseLineOutput) -> PyParseLineOutput {
 /// print(scope.to_string())  # "source.rust keyword"
 /// print(scope.len())  # 3
 /// ```
-#[pyclass(name = "Scope")]
+#[pyclass(name = "Scope", skip_from_py_object)]
 pub struct PyScope {
     inner: Scope,
 }
@@ -109,7 +109,7 @@ impl PyScope {
 // ============================================================================
 
 /// An operation on a scope stack (push, pop, clear, restore).
-#[pyclass(name = "ScopeStackOp")]
+#[pyclass(name = "ScopeStackOp", skip_from_py_object)]
 pub struct PyScopeStackOp {
     inner: SyntectScopeStackOp,
 }
@@ -177,7 +177,7 @@ impl PyScopeStackOp {
 /// print(stack.as_string())  # "source.rust keyword"
 /// print(stack.len())  # 2
 /// ```
-#[pyclass(name = "ScopeStack")]
+#[pyclass(name = "ScopeStack", skip_from_py_object)]
 pub struct PyScopeStack {
     inner: SyntectScopeStack,
 }
@@ -263,7 +263,7 @@ impl PyScopeStack {
 /// for pos, op in output.ops:
 ///     print(f"Position {pos}: {op}")
 /// ```
-#[pyclass(name = "ParseLineOutput")]
+#[pyclass(name = "ParseLineOutput", skip_from_py_object)]
 pub struct PyParseLineOutput {
     ops: Vec<(usize, String)>,
     replayed: Vec<Vec<(usize, String)>>,
@@ -310,7 +310,7 @@ impl PyParseLineOutput {
 /// print(output.ops)
 /// print(output.warnings)
 /// ```
-#[pyclass(name = "ParseState")]
+#[pyclass(name = "ParseState", skip_from_py_object)]
 pub struct PyParseState {
     syntax_name: String,
 }

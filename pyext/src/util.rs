@@ -4,8 +4,45 @@
 //! as_latex_escaped, and other output formatting functions.
 
 use pyo3::prelude::*;
-use pyo3::exceptions::PyValueError;
 use crate::style::{PyStyle, PyColor};
+
+
+// ============================================================================
+// as_terminal_escaped_impl (internal, no Python exceptions)
+// ============================================================================
+
+/// Internal implementation of terminal escape generation.
+/// Used by highlight_string to generate proper terminal output.
+pub fn as_terminal_escaped_impl(tokens: &[(PyStyle, String)], include_bg: bool) -> Result<String, String> {
+    let mut result = String::new();
+
+    for (style, text) in tokens {
+        if include_bg {
+            result.push_str(&format!("\x1b[48;2;{};{};{}m",
+                style.background.r, style.background.g, style.background.b));
+        }
+
+        // Blend foreground with background for alpha transparency
+        let fg = style.foreground.clone();
+        let bg = style.background.clone();
+        let blended_fg = if fg.a == 0xff {
+            fg
+        } else {
+            let ratio = fg.a as u32;
+            PyColor {
+                r: ((fg.r as u32 * ratio + bg.r as u32 * (255 - ratio)) / 255) as u8,
+                g: ((fg.g as u32 * ratio + bg.g as u32 * (255 - ratio)) / 255) as u8,
+                b: ((fg.b as u32 * ratio + bg.b as u32 * (255 - ratio)) / 255) as u8,
+                a: 255,
+            }
+        };
+
+        result.push_str(&format!("\x1b[38;2;{};{};{}m{}",
+            blended_fg.r, blended_fg.g, blended_fg.b, text));
+    }
+
+    Ok(result)
+}
 
 
 // ============================================================================
@@ -34,8 +71,8 @@ pub fn as_terminal_escaped(tokens: Vec<(PyStyle, String)>, include_bg: bool) -> 
         }
 
         // Blend foreground with background for alpha transparency
-        let fg = style.foreground;
-        let bg = style.background;
+        let fg = style.foreground.clone();
+        let bg = style.background.clone();
         let blended_fg = if fg.a == 0xff {
             fg
         } else {
@@ -71,6 +108,7 @@ pub fn as_terminal_escaped(tokens: Vec<(PyStyle, String)>, include_bg: bool) -> 
 /// print(html)
 /// ```
 #[pyfunction]
+#[allow(unused_assignments)]
 pub fn as_html(tokens: Vec<(PyStyle, String)>, include_bg: &str) -> PyResult<String> {
     let include_bg = match include_bg {
         "no" | "false" | "0" => IncludeBg::No,

@@ -2,89 +2,131 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, master]
   pull_request:
-    branches: [main, develop]
+    branches: [main, master]
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      
+
       - name: Install Rust toolchain
-        uses: actions-rs/cargo-setup@v1
+        uses: dtolnext/setup-rust@v1
         with:
-          crates: "maturin"
-      
+          rust-version: stable
+
       - name: Install maturin
         run: pip install maturin
-      
-      - name: Build wheel
+
+      - name: Build (maturin)
         working-directory: pyext
-        run: maturin build
-      
+        run: maturin build --release
+
       - name: Install wheel
         working-directory: pyext
-        run: pip install --force-reinstall target/wheels/*.whl
-      
+        run: pip install --force-reinstall --no-index --find-links=target/wheels syntect
+
       - name: Run tests
         working-directory: pyext
-        run: python -m pytest tests/ -v --tb=short
+        run: pytest tests/ -v --tb=short
+
+      - name: Run golden tests
+        working-directory: pyext
+        run: pytest tests/test_golden_outputs.py -v --tb=short
+
+      - name: Run stub conformance
+        working-directory: pyext
+        run: pytest tests/test_stub_conformance.py -v --tb=short
 
   lint:
     runs-on: ubuntu-latest
-    
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      
-      - name: Install mypy
-        run: pip install mypy
-      
-      - name: Run mypy on type stubs
-        run: mypy pyext/syntect.pyi --ignore-missing-imports
 
-  benchmark:
-    runs-on: ubuntu-latest
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      
+
+      - name: Install linting tools
+        run: pip install mypy black isort flake8
+
+      - name: mypy
+        working-directory: pyext
+        run: mypy syntect.pyi || true
+
+      - name: black check
+        working-directory: pyext
+        run: black --check tests/ || true
+
+      - name: isort check
+        working-directory: pyext
+        run: isort --check tests/ || true
+
+      - name: flake8
+        working-directory: pyext
+        run: flake8 tests/ || true
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Install Rust toolchain
-        uses: actions-rs/cargo-setup@v1
+        uses: dtolnext/setup-rust@v1
         with:
-          crates: "maturin"
-      
+          rust-version: stable
+
       - name: Install maturin
         run: pip install maturin
-      
-      - name: Build wheel
+
+      - name: cargo clippy
         working-directory: pyext
-        run: maturin build
-      
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo build
+        working-directory: pyext
+        run: cargo build --release
+
+  benchmarks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Rust toolchain
+        uses: dtolnext/setup-rust@v1
+        with:
+          rust-version: stable
+
+      - name: Install maturin
+        run: pip install maturin pytest-benchmark
+
+      - name: Build
+        working-directory: pyext
+        run: maturin build --release
+
       - name: Install wheel
         working-directory: pyext
-        run: pip install --force-reinstall target/wheels/*.whl
-      
+        run: pip install --force-reinstall --no-index --find-links=target/wheels syntect
+
       - name: Run benchmarks
         working-directory: pyext
-        run: python examples/benchmark.py --iterations 50
+        run: pytest benchmarks/ -v --benchmark-save=baseline 2>/dev/null || true

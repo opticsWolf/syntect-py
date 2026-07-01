@@ -27,14 +27,15 @@ mod util;
 /// ```python
 /// import syntect
 ///
-/// ss = syntect.SyntaxSet.load_defaults()
+/// ss = syntect.SyntaxSet.load_defaults(False)
 /// ts = syntect.ThemeSet.load_defaults()
+/// rust = ss.find_syntax_by_name("Rust")
 /// theme = ts.get_theme("base16-ocean.dark")
 ///
-/// hl = syntect.Highlighter(ss, theme)
+/// hl = syntect.Highlighter(rust, theme)
 /// for line in ["fn main() {", "    println!(\"hello\");", "}"]:
-///     tokens = hl.highlight_line(line, ss)
-///     print(syntect.as_terminal_escaped(tokens))
+///     tokens = hl.highlight_line(line, ss, ts)
+///     print(syntect.as_terminal_escaped(tokens, False))
 /// ```
 #[pymodule]
 fn syntect(m: &Bound<'_, PyModule>) -> PyResult<()> {

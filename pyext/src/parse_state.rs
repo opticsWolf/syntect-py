@@ -37,10 +37,18 @@ fn parse_output_to_python(output: SyntectParseLineOutput) -> PyParseLineOutput {
         }).collect()
     }).collect();
 
+    // Store real ops for direct access (no string re-parsing)
+    let real_ops: Vec<syntect::parsing::ScopeStackOp> = output.ops.iter().map(|(_, op)| op.clone()).collect();
+    let real_replayed: Vec<Vec<syntect::parsing::ScopeStackOp>> = output.replayed.iter().map(|line_ops| {
+        line_ops.iter().map(|(_, op)| op.clone()).collect()
+    }).collect();
+
     PyParseLineOutput {
         ops,
         replayed,
         warnings: output.warnings,
+        real_ops,
+        real_replayed,
     }
 }
 
@@ -288,9 +296,15 @@ impl PyScopeStack {
 /// ```
 #[pyclass(name = "ParseLineOutput", skip_from_py_object)]
 pub struct PyParseLineOutput {
+    /// Real ops stored as (position, string representation for Python API).
+    /// The string is generated once from the real op — no re-parsing needed.
     ops: Vec<(usize, String)>,
+    /// Real replayed ops.
     replayed: Vec<Vec<(usize, String)>>,
     warnings: Vec<String>,
+    /// Cached real ops for get_scope_stack_op (avoids string re-parsing).
+    real_ops: Vec<syntect::parsing::ScopeStackOp>,
+    real_replayed: Vec<Vec<syntect::parsing::ScopeStackOp>>,
 }
 
 #[pymethods]
@@ -302,6 +316,8 @@ impl PyParseLineOutput {
 
     /// Get the scope stack operation at the given index as a ScopeStackOp object.
     ///
+    /// Uses cached real ops — no string re-parsing.
+    ///
     /// Example:
     /// ```python
     /// output = parse_state.parse_line("fn main() {", ss)
@@ -310,24 +326,40 @@ impl PyParseLineOutput {
     ///     print(op.op_type)  # 'Push', 'Pop', 'Clear', 'Restore', 'Noop'
     /// ```
     pub fn get_scope_stack_op(&self, index: usize) -> PyResult<PyScopeStackOp> {
-        if index >= self.ops.len() {
+        if index >= self.real_ops.len() {
             return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
-                format!("Index {} out of range for ops (length {})", index, self.ops.len())
+                format!("Index {} out of range for ops (length {})", index, self.real_ops.len())
             ));
         }
-        let op_str = &self.ops[index].1;
-        Ok(parse_op_string_to_scope_stack_op(op_str))
+        Ok(PyScopeStackOp { inner: self.real_ops[index].clone() })
     }
 
     /// Get the op type (Push, Pop, Clear, Restore, Noop) for the operation at the given index.
+    /// Uses cached real ops — no string parsing.
     pub fn get_op_type(&self, index: usize) -> PyResult<String> {
-        if index >= self.ops.len() {
+        if index >= self.real_ops.len() {
             return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
-                format!("Index {} out of range for ops (length {})", index, self.ops.len())
+                format!("Index {} out of range for ops (length {})", index, self.real_ops.len())
             ));
         }
-        let op_str = &self.ops[index].1;
-        Ok(scope_stack_op_type_str(op_str))
+        Ok(scope_stack_op_type_real(&self.real_ops[index]))
+    }
+
+    /// Get a replayed scope stack operation at (line, op) index.
+    /// Uses cached real ops — no string re-parsing.
+    pub fn get_replayed_scope_stack_op(&self, line: usize, op: usize) -> PyResult<PyScopeStackOp> {
+        if line >= self.real_replayed.len() {
+            return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                format!("Line {} out of range for replayed (length {})", line, self.real_replayed.len())
+            ));
+        }
+        let line_ops = &self.real_replayed[line];
+        if op >= line_ops.len() {
+            return Err(PyErr::new::<pyo3::exceptions::PyIndexError, _>(
+                format!("Op {} out of range for replayed line {} (length {})", op, line, line_ops.len())
+            ));
+        }
+        Ok(PyScopeStackOp { inner: line_ops[op].clone() })
     }
 
     #[getter]
@@ -350,38 +382,15 @@ impl PyParseLineOutput {
     }
 }
 
-// Helper: parse op string back to ScopeStackOp
-fn parse_op_string_to_scope_stack_op(op_str: &str) -> PyScopeStackOp {
-    if op_str.starts_with("Push(") && op_str.ends_with(')') {
-        let inner = &op_str[5..op_str.len()-1];
-        if let Ok(scope) = PyScope::new(inner) {
-            return PyScopeStackOp { inner: SyntectScopeStackOp::Push(scope.inner) };
-        }
+/// Get op type from a real ScopeStackOp (no string parsing needed).
+fn scope_stack_op_type_real(op: &SyntectScopeStackOp) -> String {
+    match op {
+        SyntectScopeStackOp::Push(_) => "Push".to_string(),
+        SyntectScopeStackOp::Pop(_) => "Pop".to_string(),
+        SyntectScopeStackOp::Clear(_) => "Clear".to_string(),
+        SyntectScopeStackOp::Restore => "Restore".to_string(),
+        SyntectScopeStackOp::Noop => "Noop".to_string(),
     }
-    if op_str.starts_with("Pop(") && op_str.ends_with(')') {
-        if let Ok(n) = op_str[4..op_str.len()-1].parse::<usize>() {
-            return PyScopeStackOp { inner: SyntectScopeStackOp::Pop(n) };
-        }
-    }
-    if op_str == "Clear" {
-        return PyScopeStackOp { inner: SyntectScopeStackOp::Clear(syntect::parsing::ClearAmount::All) };
-    }
-    if op_str == "Restore" {
-        return PyScopeStackOp { inner: SyntectScopeStackOp::Restore };
-    }
-    if op_str == "Noop" {
-        return PyScopeStackOp { inner: SyntectScopeStackOp::Noop };
-    }
-    PyScopeStackOp { inner: SyntectScopeStackOp::Noop }
-}
-
-fn scope_stack_op_type_str(op_str: &str) -> String {
-    if op_str.starts_with("Push(") { return "Push".to_string(); }
-    if op_str.starts_with("Pop(") { return "Pop".to_string(); }
-    if op_str == "Clear" { return "Clear".to_string(); }
-    if op_str == "Restore" { return "Restore".to_string(); }
-    if op_str == "Noop" { return "Noop".to_string(); }
-    "Unknown".to_string()
 }
 
 // ============================================================================

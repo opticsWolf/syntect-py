@@ -1,6 +1,7 @@
 //! Python bindings for syntect's theme set management.
 
 use pyo3::prelude::*;
+use std::sync::Arc;
 use syntect::highlighting::{Theme as SyntectTheme, ThemeSet as SyntectThemeSet};
 use crate::errors;
 use crate::style::{PyColor, PyFontStyle, PyStyleModifier};
@@ -264,11 +265,11 @@ impl PyThemeSettings {
 #[pyclass(name = "ThemeItem", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyThemeItem {
-    scope: String,
+    scope: Arc<String>,
     foreground: Option<PyColor>,
     background: Option<PyColor>,
     font_style: u8,
-    style_modifier: String,
+    style_modifier: Arc<String>,
     #[allow(dead_code)]
     style: PyStyleModifier,
 }
@@ -277,7 +278,7 @@ pub struct PyThemeItem {
 impl PyThemeItem {
     #[getter]
     pub fn scope(&self) -> String {
-        self.scope.clone()
+        (*self.scope).clone()
     }
 
     #[getter]
@@ -297,7 +298,7 @@ impl PyThemeItem {
 
     #[getter]
     pub fn style_modifier(&self) -> String {
-        self.style_modifier.clone()
+        (*self.style_modifier).clone()
     }
 
     #[getter]
@@ -315,7 +316,7 @@ impl PyThemeItem {
 
     pub fn __repr__(&self) -> String {
         format!("ThemeItem(scope='{}', fg={:?}, bg={:?}, font={})",
-            self.scope, self.foreground.as_ref().map(|c| c.to_hex()), self.background.as_ref().map(|c| c.to_hex()), self.font_style)
+            *self.scope, self.foreground.as_ref().map(|c| c.to_hex()), self.background.as_ref().map(|c| c.to_hex()), self.font_style)
     }
 }
 
@@ -326,9 +327,9 @@ impl PyThemeItem {
 #[pyclass(name = "Theme", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyTheme {
-    key: String,
-    name: String,
-    author: String,
+    key: Arc<String>,
+    name: Arc<String>,
+    author: Arc<String>,
     settings: PyThemeSettings,
     scopes: Vec<PyThemeItem>,
 }
@@ -337,17 +338,17 @@ pub struct PyTheme {
 impl PyTheme {
     #[getter]
     pub fn key(&self) -> String {
-        self.key.clone()
+        (*self.key).clone()
     }
 
     #[getter]
     pub fn name(&self) -> String {
-        self.name.clone()
+        (*self.name).clone()
     }
 
     #[getter]
     pub fn author(&self) -> String {
-        self.author.clone()
+        (*self.author).clone()
     }
 
     #[getter]
@@ -361,7 +362,7 @@ impl PyTheme {
     }
 
     pub fn __repr__(&self) -> String {
-        format!("Theme(name='{}', author='{}')", self.name, self.author)
+        format!("Theme(name='{}', author='{}')", *self.name, *self.author)
     }
 }
 
@@ -408,112 +409,119 @@ impl PyThemeSet {
     pub fn get_theme(&self, key: &str) -> Option<PyTheme> {
         self.inner.themes.get(key).map(|t: &SyntectTheme| {
             PyTheme {
-                key: key.to_string(),
-                name: t.name.clone().unwrap_or_default(),
-                author: t.author.clone().unwrap_or_default(),
+                key: Arc::new(key.to_string()),
+                name: Arc::new(t.name.clone().unwrap_or_default()),
+                author: Arc::new(t.author.clone().unwrap_or_default()),
                 settings: PyThemeSettings {
                     foreground: t.settings.foreground.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     background: t.settings.background.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     selection_background: t.settings.selection.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     gutter_foreground: t.settings.gutter_foreground.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     gutter_background: t.settings.gutter.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     // NEW fields
                     caret: t.settings.caret.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     line_highlight: t.settings.line_highlight.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     misspelling: t.settings.misspelling.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     minimap_border: t.settings.minimap_border.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     accent: t.settings.accent.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     popup_css: t.settings.popup_css.clone(),
                     phantom_css: t.settings.phantom_css.clone(),
                     bracket_contents_foreground: t.settings.bracket_contents_foreground.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     bracket_contents_options: to_underline_option(&t.settings.bracket_contents_options),
                     brackets_foreground: t.settings.brackets_foreground.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     brackets_background: t.settings.brackets_background.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     brackets_options: to_underline_option(&t.settings.brackets_options),
                     tags_foreground: t.settings.tags_foreground.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     tags_options: to_underline_option(&t.settings.tags_options),
                     highlight: t.settings.highlight.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     find_highlight: t.settings.find_highlight.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     find_highlight_foreground: t.settings.find_highlight_foreground.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     selection_foreground: t.settings.selection_foreground.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     selection_border: t.settings.selection_border.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     inactive_selection: t.settings.inactive_selection.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     inactive_selection_foreground: t.settings.inactive_selection_foreground.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     guide: t.settings.guide.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     active_guide: t.settings.active_guide.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     stack_guide: t.settings.stack_guide.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                     shadow: t.settings.shadow.as_ref().map(|c| PyColor {
-                        r: c.r, g: c.g, b: c.b, a: 255,
+                        r: c.r, g: c.g, b: c.b, a: c.a,
                     }),
                 },
                 scopes: t.scopes.iter().map(|s| {
                     let fm = PyStyleModifier {
                         foreground: s.style.foreground.as_ref().map(|c| PyColor {
-                            r: c.r, g: c.g, b: c.b, a: 255,
+                            r: c.r, g: c.g, b: c.b, a: c.a,
                         }),
                         background: s.style.background.as_ref().map(|c| PyColor {
-                            r: c.r, g: c.g, b: c.b, a: 255,
+                            r: c.r, g: c.g, b: c.b, a: c.a,
                         }),
                         font_style: s.style.font_style.map(|fs| PyFontStyle { bits: fs.bits() }),
                     };
+                    // Build a real scope selector string from the ScopeSelectors,
+                    // not a Debug dump — this is needed for CSS generation.
+                    let scope_str = s.scope.selectors.iter().map(|sel| {
+                        sel.path.scopes.iter().map(|sc| {
+                            sc.build_string()
+                        }).collect::<Vec<_>>().join(" ")
+                    }).collect::<Vec<_>>().join(", ");
                     PyThemeItem {
-                        scope: format!("{:?}", s.scope),
+                        scope: Arc::new(scope_str),
                         foreground: s.style.foreground.as_ref().map(|c| PyColor {
-                            r: c.r, g: c.g, b: c.b, a: 255,
+                            r: c.r, g: c.g, b: c.b, a: c.a,
                         }),
                         background: s.style.background.as_ref().map(|c| PyColor {
-                            r: c.r, g: c.g, b: c.b, a: 255,
+                            r: c.r, g: c.g, b: c.b, a: c.a,
                         }),
                         font_style: s.style.font_style.map_or(0, |fs| fs.bits()),
-                        style_modifier: format!("{:?}", s.style),
+                        style_modifier: Arc::new(format!("{:?}", s.style)),
                         style: fm,
                     }
                 }).collect(),

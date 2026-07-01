@@ -15,10 +15,33 @@ use crate::theme_set::{PyTheme, PyThemeSet};
 use crate::style::PyStyle;
 
 
+// ============================================================================
+// Helper: convert PyClassStyle to SyntectClassStyle (no per-call leak)
+// ============================================================================
+
+/// Convert a PyClassStyle to SyntectClassStyle.
+/// For kind=1 (spaced_prefixed), the prefix is &'static str (leaked once per instance).
+fn py_class_style_to_syntect(cs: &PyClassStyle) -> SyntectClassStyle {
+    match cs.kind {
+        0 => SyntectClassStyle::Spaced,
+        1 => SyntectClassStyle::SpacedPrefixed { prefix: cs.prefix_static },
+        2 => SyntectClassStyle::SpacedPrefixed { prefix: "" },
+        _ => SyntectClassStyle::Spaced,
+    }
+}
+
+
+// ============================================================================
+// PyClassStyle — CSS class style selector
+// ============================================================================
+
 #[pyclass(name = "ClassStyle")]
 pub struct PyClassStyle {
     kind: usize,
-    prefix: String,
+    /// &'static str for SyntectClassStyle::SpacedPrefixed (kind=1).
+    /// Leaked once per instance in spaced_prefixed() — not per call.
+    /// SyntectClassStyle requires &'static str, so we can't avoid this.
+    prefix_static: &'static str,
 }
 
 #[pymethods]
@@ -26,26 +49,29 @@ impl PyClassStyle {
     #[new]
     pub fn new(kind: &str) -> Self {
         match kind {
-            "spaced" => PyClassStyle { kind: 0, prefix: String::new() },
-            "spaced_prefixed" => PyClassStyle { kind: 1, prefix: String::new() },
-            "class_attribute" => PyClassStyle { kind: 2, prefix: String::new() },
-            _ => PyClassStyle { kind: 0, prefix: String::new() },
+            "spaced" => PyClassStyle { kind: 0, prefix_static: "" },
+            "spaced_prefixed" => PyClassStyle { kind: 1, prefix_static: "" },
+            "class_attribute" => PyClassStyle { kind: 2, prefix_static: "" },
+            _ => PyClassStyle { kind: 0, prefix_static: "" },
         }
     }
 
     #[staticmethod]
     pub fn spaced() -> PyClassStyle {
-        PyClassStyle { kind: 0, prefix: String::new() }
+        PyClassStyle { kind: 0, prefix_static: "" }
     }
 
     #[staticmethod]
     pub fn spaced_prefixed(prefix: &str) -> PyResult<PyClassStyle> {
-        Ok(PyClassStyle { kind: 1, prefix: prefix.to_string() })
+        // Leak the prefix as &'static str — only once per instance, not per call.
+        // SyntectClassStyle::SpacedPrefixed requires &'static str, so this is necessary.
+        let leaked = Box::leak(prefix.to_string().into_boxed_str());
+        Ok(PyClassStyle { kind: 1, prefix_static: leaked })
     }
 
     #[staticmethod]
     pub fn class_attribute() -> PyClassStyle {
-        PyClassStyle { kind: 2, prefix: String::new() }
+        PyClassStyle { kind: 2, prefix_static: "" }
     }
 
     pub fn __repr__(&self) -> String {
@@ -58,6 +84,10 @@ impl PyClassStyle {
     }
 }
 
+
+// ============================================================================
+// PyIncludeBg — background color inclusion policy
+// ============================================================================
 
 #[pyclass(name = "IncludeBg")]
 pub struct PyIncludeBg {
@@ -101,6 +131,10 @@ impl PyIncludeBg {
 }
 
 
+// ============================================================================
+// css_for_theme — Generate CSS for a theme (string class_style)
+// ============================================================================
+
 /// Generate CSS for a theme using a string class style specifier.
 ///
 /// The class_style parameter should be one of: "spaced", "spaced_prefixed",
@@ -113,28 +147,19 @@ pub fn css_for_theme(theme: &PyTheme, class_style: &str) -> PyResult<String> {
         _ => SyntectClassStyle::SpacedPrefixed { prefix: "syn-" },
     };
 
-    // Also accept a PyClassStyle object for the class_style parameter
-    // This allows the prefix to be used from ClassStyle.spaced_prefixed("custom-")
-
     // Build real syntect theme scopes from PyTheme data
     let scopes: Vec<syntect::highlighting::ThemeItem> = theme.scopes().iter().map(|item| {
         let mut style = syntect::highlighting::StyleModifier::default();
 
         if let Some(fg) = item.foreground() {
             style.foreground = Some(syntect::highlighting::Color {
-                r: fg.r(),
-                g: fg.g(),
-                b: fg.b(),
-                a: fg.a(),
+                r: fg.r(), g: fg.g(), b: fg.b(), a: fg.a(),
             });
         }
 
         if let Some(bg) = item.background() {
             style.background = Some(syntect::highlighting::Color {
-                r: bg.r(),
-                g: bg.g(),
-                b: bg.b(),
-                a: bg.a(),
+                r: bg.r(), g: bg.g(), b: bg.b(), a: bg.a(),
             });
         }
 
@@ -168,23 +193,17 @@ pub fn css_for_theme(theme: &PyTheme, class_style: &str) -> PyResult<String> {
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("CSS generation failed: {}", e)))
 }
 
+
+// ============================================================================
+// css_for_theme_class — Generate CSS for a theme (PyClassStyle object)
+// ============================================================================
+
 /// Generate CSS for a theme using a PyClassStyle object.
 ///
 /// This overload allows using the prefix from ClassStyle.spaced_prefixed("custom-").
-///
-/// Example:
-/// ```python
-/// cs = syntect.ClassStyle.spaced_prefixed("custom-")
-/// css = syntect.css_for_theme_class(theme, cs)
-/// ```
 #[pyfunction]
 pub fn css_for_theme_class(theme: &PyTheme, class_style: &PyClassStyle) -> PyResult<String> {
-    let syntect_style = match class_style.kind {
-        0 => SyntectClassStyle::Spaced,
-        1 => SyntectClassStyle::SpacedPrefixed { prefix: Box::leak(class_style.prefix.clone().into_boxed_str()) },
-        2 => SyntectClassStyle::SpacedPrefixed { prefix: "" },
-        _ => SyntectClassStyle::Spaced,
-    };
+    let syntect_style = py_class_style_to_syntect(class_style);
 
     // Build real syntect theme scopes from PyTheme data
     let scopes: Vec<syntect::highlighting::ThemeItem> = theme.scopes().iter().map(|item| {
@@ -192,19 +211,13 @@ pub fn css_for_theme_class(theme: &PyTheme, class_style: &PyClassStyle) -> PyRes
 
         if let Some(fg) = item.foreground() {
             style.foreground = Some(syntect::highlighting::Color {
-                r: fg.r(),
-                g: fg.g(),
-                b: fg.b(),
-                a: fg.a(),
+                r: fg.r(), g: fg.g(), b: fg.b(), a: fg.a(),
             });
         }
 
         if let Some(bg) = item.background() {
             style.background = Some(syntect::highlighting::Color {
-                r: bg.r(),
-                g: bg.g(),
-                b: bg.b(),
-                a: bg.a(),
+                r: bg.r(), g: bg.g(), b: bg.b(), a: bg.a(),
             });
         }
 
@@ -237,6 +250,18 @@ pub fn css_for_theme_class(theme: &PyTheme, class_style: &PyClassStyle) -> PyRes
 }
 
 
+// ============================================================================
+// highlighted_html_for_string_py — Full highlighted HTML string
+// ============================================================================
+
+/// Generate full highlighted HTML for a string.
+///
+/// The `include_bg` parameter controls background color output:
+/// - "no" / "false" / "0": never include background
+/// - "yes" / "true" / "1": always include background
+/// - anything else: only include background if different from theme default
+///
+/// The `start_line` parameter sets the starting line number for the HTML output.
 #[pyfunction]
 pub fn highlighted_html_for_string_py(
     code: &str,
@@ -244,8 +269,8 @@ pub fn highlighted_html_for_string_py(
     theme: &PyTheme,
     syntax_set: &PySyntaxSet,
     theme_set: &PyThemeSet,
-    _include_bg: &str,
-    _start_line: usize,
+    include_bg: &str,
+    start_line: usize,
 ) -> PyResult<String> {
     let syntax = syntax_set.inner.find_syntax_by_name(&syntax_ref.name)
         .ok_or_else(|| PyErr::new::<PyValueError, _>(
@@ -257,16 +282,63 @@ pub fn highlighted_html_for_string_py(
             format!("Theme not found: {}", theme.key())
         ))?;
 
-    let result = syntect::html::highlighted_html_for_string(code, &syntax_set.inner, &syntax, real_theme);
-    match result {
-        Ok(html) => Ok(html),
-        Err(e) => Err(PyErr::new::<PyValueError, _>(format!("HTML generation failed: {}", e))),
+    // Determine IncludeBackground policy
+    let bg_policy: syntect::html::IncludeBackground = match include_bg {
+        "no" | "false" | "0" => IncludeBackground::No,
+        "yes" | "true" | "1" => IncludeBackground::Yes,
+        _ => IncludeBackground::IfDifferent(real_theme.settings.background.unwrap_or(
+            syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 }
+        )),
+    };
+
+    let mut highlighter = HighlightLines::new(syntax, real_theme);
+    let mut html = String::new();
+
+    // Open <pre><code> with line-numbering if start_line > 0
+    let (pre_tag, _default_bg) = start_highlighted_html_snippet(real_theme);
+    html.push_str(&pre_tag);
+
+    for (line_idx, line) in code.split('\n').enumerate() {
+        let line_num = start_line + line_idx;
+
+        match highlighter.highlight_line(line, &syntax_set.inner) {
+            Ok(regions) => {
+                // Use syntect's upstream styled_line_to_highlighted_html with bg_policy
+                match syntect::html::styled_line_to_highlighted_html(
+                    &regions.iter().map(|(s, t)| (*s, *t)).collect::<Vec<_>>(),
+                    bg_policy,
+                ) {
+                    Ok(line_html) => {
+                        html.push_str(&format!("<span class=\"line\" id=\"l{}\">", line_num));
+                        html.push_str(&line_html);
+                        html.push_str("</span>\n");
+                    }
+                    Err(_) => {
+                        html.push_str("\n");
+                    }
+                }
+            }
+            Err(_) => {
+                html.push_str(&format!("<span class=\"line\" id=\"l{}\">{}</span>\n",
+                    line_num, html_escape(line)));
+            }
+        }
     }
+
+    html.push_str("</code></pre>\n");
+    Ok(html)
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
 
+// ============================================================================
+// highlighted_html_at_line_and_column_number — HTML with line numbers
+// ============================================================================
+
 #[pyfunction]
-#[allow(unused_assignments)]
 pub fn highlighted_html_at_line_and_column_number(
     code: &str,
     syntax_ref: &PySyntaxReference,
@@ -380,8 +452,6 @@ fn scope_string_to_selectors(scope_str: &str) -> syntect::highlighting::ScopeSel
 
 // ============================================================================
 // Alias functions for API compatibility
-// ============================================================================// ============================================================================
-// Alias functions for API compatibility
 // ============================================================================
 
 /// Alias for css_for_theme - generates CSS for a theme.
@@ -408,20 +478,6 @@ pub fn create_html_file(
 // ============================================================================
 
 /// A generator that produces class-based HTML output for highlighted syntax.
-///
-/// Unlike inline-style HTML, this generator uses CSS classes for styling,
-/// making the output more compact and themable.
-///
-/// Example:
-/// ```python
-/// gen = syntect.ClassedHTMLGenerator(
-///     syntax_ref, syntax_set,
-///     syntect.ClassStyle.spaced_prefixed("syn-")
-/// )
-/// for line in code.split("\n"):
-///     gen.parse_html_for_line_which_includes_newline(line)
-/// html = gen.finalize()
-/// ```
 #[pyclass(name = "ClassedHTMLGenerator", skip_from_py_object)]
 pub struct PyClassedHTMLGenerator {
     syntax_set: syntect::parsing::SyntaxSet,
@@ -442,19 +498,13 @@ impl PyClassedHTMLGenerator {
         syntax_set: &PySyntaxSet,
         class_style: &PyClassStyle,
     ) -> PyResult<Self> {
-        let syntect_style = match class_style.kind {
-            0 => SyntectClassStyle::Spaced,
-            1 => SyntectClassStyle::SpacedPrefixed { prefix: Box::leak(class_style.prefix.clone().into_boxed_str()) },
-            2 => SyntectClassStyle::SpacedPrefixed { prefix: "" },
-            _ => SyntectClassStyle::Spaced,
-        };
+        let syntect_style = py_class_style_to_syntect(class_style);
 
         let syntax = syntax_set.inner.find_syntax_by_name(&syntax_ref.name)
             .ok_or_else(|| PyErr::new::<PyValueError, _>(
                 format!("Syntax not found: {}", syntax_ref.name)
             ))?;
 
-        // Clone the syntax_set and syntax_ref so the generator owns them
         let ss_clone = syntax_set.inner.clone();
         let sr_clone = syntax.clone();
         let parse_state = syntect::parsing::ParseState::new(&sr_clone);
@@ -474,7 +524,6 @@ impl PyClassedHTMLGenerator {
     pub fn parse_html_for_line_which_includes_newline(
         &mut self, line: &str
     ) -> PyResult<()> {
-        // Use line_tokens_to_classed_spans with the parse state
         let output = self.parse_state.parse_line(line, &self.syntax_set)
             .map_err(|e| PyErr::new::<PyValueError, _>(format!("HTML generation failed: {}", e)))?;
         let (html_part, span_delta) = line_tokens_to_classed_spans(
@@ -492,7 +541,6 @@ impl PyClassedHTMLGenerator {
     /// Parse HTML for a line of code (without newline).
     pub fn parse_html_for_line(&mut self, line: &str) -> PyResult<()> {
         self.parse_html_for_line_which_includes_newline(line)?;
-        // Remove trailing newline from html
         if self.html.ends_with('\n') {
             self.html.pop();
         }
@@ -501,7 +549,6 @@ impl PyClassedHTMLGenerator {
 
     /// Finalize the generated HTML and return it as a string.
     pub fn finalize(&mut self) -> String {
-        // Close any open spans
         for _ in 0..self.open_spans {
             self.html.push_str("</span>");
         }
@@ -518,29 +565,12 @@ impl PyClassedHTMLGenerator {
 // tokens_to_classed_spans — Convert tokens to classed HTML
 // ============================================================================
 
-/// Convert highlighted tokens to class-based HTML spans.
-///
-/// The tokens should be in the format returned by Highlighter.highlight_line(),
-/// i.e., [(Style, text), ...].
-///
-/// Returns the HTML string.
-///
-/// Example:
-/// ```python
-/// tokens = hl.highlight_line("fn main()", ss, ts)
-/// html = syntect.tokens_to_classed_spans(tokens, class_style)
-/// ```
 #[pyfunction]
 pub fn tokens_to_classed_spans(
     tokens: Vec<(PyStyle, String)>,
     class_style: &PyClassStyle,
 ) -> PyResult<String> {
-    let syntect_style = match class_style.kind {
-        0 => SyntectClassStyle::Spaced,
-        1 => SyntectClassStyle::SpacedPrefixed { prefix: Box::leak(class_style.prefix.clone().into_boxed_str()) },
-        2 => SyntectClassStyle::SpacedPrefixed { prefix: "" },
-        _ => SyntectClassStyle::Spaced,
-    };
+    let syntect_style = py_class_style_to_syntect(class_style);
 
     // Build a simple ops list from the tokens (each token is a single span)
     let ops: Vec<(usize, syntect::parsing::ScopeStackOp)> = tokens.iter().enumerate()
@@ -562,27 +592,16 @@ pub fn tokens_to_classed_spans(
 
 
 // ============================================================================
-// line_tokens_to_classed_spans — Python version
+// line_tokens_to_classed_spans_py — Python version
 // ============================================================================
 
-/// Convert a line of text and parse ops to class-based HTML spans.
-///
-/// This is the Python-friendly version of syntect's line_tokens_to_classed_spans.
-///
-/// Returns (html_string, span_delta) where span_delta is the number of
-/// <span> tags opened (positive) or closed (negative).
 #[pyfunction]
 pub fn line_tokens_to_classed_spans_py(
     line: &str,
     ops: Vec<(usize, String)>,
     class_style: &PyClassStyle,
 ) -> PyResult<(String, isize)> {
-    let syntect_style = match class_style.kind {
-        0 => SyntectClassStyle::Spaced,
-        1 => SyntectClassStyle::SpacedPrefixed { prefix: Box::leak(class_style.prefix.clone().into_boxed_str()) },
-        2 => SyntectClassStyle::SpacedPrefixed { prefix: "" },
-        _ => SyntectClassStyle::Spaced,
-    };
+    let syntect_style = py_class_style_to_syntect(class_style);
 
     // Convert string-based ops to real ScopeStackOps
     let real_ops: Vec<(usize, syntect::parsing::ScopeStackOp)> = ops
@@ -590,7 +609,6 @@ pub fn line_tokens_to_classed_spans_py(
         .map(|(pos, op_str)| {
             let op = match op_str.as_str() {
                 "Push" => {
-                    // Try to parse as a scope
                     if let Ok(scope) = syntect::parsing::Scope::new("source") {
                         (pos, syntect::parsing::ScopeStackOp::Push(scope))
                     } else {
@@ -623,34 +641,20 @@ pub fn line_tokens_to_classed_spans_py(
 // styled_line_to_highlighted_html — Convert styled tokens to inline HTML
 // ============================================================================
 
-/// Convert a styled line (tokens) to inline-style HTML.
-///
-/// The tokens should be in the format returned by Highlighter.highlight_line(),
-/// i.e., [(Style, text), ...].
-///
-/// The `include_bg` parameter controls background color output:
-/// - "no" / "false" / 0: never include background
-/// - "yes" / "true" / 1: always include background
-/// - anything else: only include background if different from theme default
-///
-/// Returns the HTML string.
-///
-/// Example:
-/// ```python
-/// tokens = hl.highlight_line("fn main()", ss, ts)
-/// html = syntect.styled_line_to_highlighted_html(tokens, "no")
-/// ```
 #[pyfunction]
 pub fn styled_line_to_highlighted_html(
     tokens: Vec<(PyStyle, String)>,
     include_bg: &str,
+    default_bg: Option<crate::style::PyColor>,
 ) -> PyResult<String> {
+    // Determine IncludeBackground policy
     let bg: syntect::html::IncludeBackground = match include_bg {
         "no" | "false" | "0" => IncludeBackground::No,
         "yes" | "true" | "1" => IncludeBackground::Yes,
-        _ => IncludeBackground::IfDifferent(
-            syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 }
-        ),
+        _ => IncludeBackground::IfDifferent(default_bg.map_or(
+            syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 },
+            |c| syntect::highlighting::Color { r: c.r, g: c.g, b: c.b, a: c.a },
+        )),
     };
 
     // Convert PyStyle tuples to syntect tuples

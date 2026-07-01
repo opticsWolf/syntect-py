@@ -73,6 +73,7 @@ class SyntaxReference:
     name: str
     scope: str
     file_extensions: List[str]
+    hidden: bool
     first_line_match: Optional[str]
     version: int
     variables: List[Tuple[str, str]]
@@ -121,6 +122,32 @@ class SyntaxSet:
     def metadata(self) -> Optional["Metadata"]:
         """Get metadata from .tmPreferences files."""
         ...
+    
+    @staticmethod
+    def builder() -> "SyntaxSetBuilder":
+        """Create a builder to load syntaxes from disk."""
+        ...
+    
+    def find_syntax_for_file(self, path: str) -> Optional[SyntaxReference]:
+        """Find syntax by file path."""
+        ...
+    
+    def find_syntax_plain_text(self) -> SyntaxReference:
+        """Get the plain text syntax."""
+        ...
+    
+    def warnings(self) -> List[str]:
+        """Get warnings collected during syntax loading."""
+        ...
+    
+    @staticmethod
+    def from_dump(path: str) -> "SyntaxSet":
+        """Load syntax set from .packdump file."""
+        ...
+    
+    def to_dump(self, path: str) -> None:
+        """Save syntax set to .packdump file."""
+        ...
 
 
 @dataclass
@@ -132,7 +159,6 @@ class SyntaxSetBuilder:
         ...
     
     def add_plain_text_syntax(self) -> None: ...
-    def add(self, syntax_def: str) -> None: ...
     def build(self) -> SyntaxSet: ...
     def warnings(self) -> List[str]: ...
 
@@ -184,6 +210,7 @@ class ThemeItem:
     background: Optional[Color]
     font_style: int
     style_modifier: StyleModifier
+    style: StyleModifier
 
 
 @dataclass
@@ -435,6 +462,7 @@ class ParseLineOutput:
     
     def get_scope_stack_op(self, index: int) -> "ScopeStackOp": ...
     def get_op_type(self, index: int) -> str: ...
+    def get_replayed_scope_stack_op(self, line: int, op: int) -> "ScopeStackOp": ...
 
 
 # ============================================================================

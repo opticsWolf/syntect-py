@@ -164,7 +164,37 @@ The constructor takes `(syntax_ref, theme_set, theme_name)` — 3 arguments — 
 
 The upstream `ScopeRepository` type was deprecated in syntect v5.3.0 and is intentionally excluded from bindings.
 
-### 5.8 `HighlightResult` vs `Highlighter.highlight_line()`
+### 5.8 Arc-Based Lazy Cloning (#17)
+
+`PySyntaxReference`, `PyThemeItem`, and `PyTheme` string/vector fields use `Arc` for O(1) shared ownership:
+
+```rust
+pub struct PySyntaxReference {
+    name: Arc<String>,                          // clone() is pointer copy
+    file_extensions: Arc<Vec<String>>,           // clone() is pointer copy
+    scope: Arc<String>,
+    first_line_match: Option<Arc<String>>,
+    version: i32,
+    variables: Arc<Vec<(String, String)>>,
+}
+
+pub struct PyTheme {
+    key: Arc<String>,
+    name: Arc<String>,
+    author: Arc<String>,
+    // ...
+}
+
+pub struct PyThemeItem {
+    scope: Arc<String>,
+    style_modifier: Arc<String>,
+    // ...
+}
+```
+
+All `find_syntax_by_*` and `syntaxes()` methods use a shared `syntax_ref_to_py()` helper. CSS generation improved from 0.049ms to 0.046ms/100lines. `highlight_string` improved from 128.9ms/100lines to 126.5ms/100lines.
+
+### 5.9 `HighlightResult` vs `Highlighter.highlight_line()`
 
 `HighlightResult` is returned by `highlight_string()` — a high-level convenience function that highlights all lines at once. It provides `tokens`, `html`, and `terminal_escaped` properties plus `as_html()`, `as_terminal_escaped()`, and `as_latex_escaped()` methods.
 
@@ -216,7 +246,7 @@ pyext/
 │   └── errors.rs       # LoadingError, ParsingError, DumpError, ParseSyntaxError,
 │                         # loading_error_to_string, dump_error_to_string
 ├── examples/           # 9 example scripts
-├── tests/              # 258+ tests across 15 test files
+├── tests/              # 337 tests across 15 test files (incl. 70 golden outputs)
 └── mypy.ini            # mypy type checking configuration
 ```
 
@@ -351,4 +381,4 @@ Combine with `|`: `FontStyle.BOLD | FontStyle.ITALIC` → bits = 5
 
 ---
 
-*Generated: 2026-06-30 · 258 tests passing · Zero compiler warnings · Stage 3 (Phases 26-29) complete · All 29 phases done*
+*Generated: 2026-06-30 · 337 tests passing · Zero compiler warnings · All phases complete · CI configured · Arc-based lazy cloning · 70 golden output tests*

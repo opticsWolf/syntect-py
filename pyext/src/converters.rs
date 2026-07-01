@@ -43,14 +43,10 @@ pub fn py_color_to_syntect(color: &PyColor) -> SyntectColor {
 }
 
 /// Convert a Python PyFontStyle to a syntect FontStyle.
+/// Uses from_bits() to correctly handle combined styles (e.g. bold+italic=5).
 #[allow(dead_code)]
 pub fn py_font_style_to_syntect(fs: &PyFontStyle) -> SyntectFontStyle {
-    match fs.bits {
-        1 => SyntectFontStyle::BOLD,
-        2 => SyntectFontStyle::UNDERLINE,
-        4 => SyntectFontStyle::ITALIC,
-        _ => SyntectFontStyle::empty(),
-    }
+    SyntectFontStyle::from_bits(fs.bits).unwrap_or_else(SyntectFontStyle::empty)
 }
 
 /// Create a default (empty) syntect FontStyle.
@@ -60,14 +56,10 @@ pub fn default_font_style() -> SyntectFontStyle {
 }
 
 /// Create a syntect FontStyle from bits.
+/// Uses from_bits() to correctly handle combined styles (e.g. bold+italic=5).
 #[allow(dead_code)]
 pub fn font_style_from_bits(bits: u8) -> SyntectFontStyle {
-    match bits {
-        1 => SyntectFontStyle::BOLD,
-        2 => SyntectFontStyle::UNDERLINE,
-        4 => SyntectFontStyle::ITALIC,
-        _ => SyntectFontStyle::empty(),
-    }
+    SyntectFontStyle::from_bits(bits).unwrap_or_else(SyntectFontStyle::empty)
 }
 
 /// Convert a Python PyStyle to a syntect Style.

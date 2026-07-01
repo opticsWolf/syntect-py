@@ -321,15 +321,13 @@ repr(hl)                                    # "Highlighter(syntax='Rust', theme=
 ### HighlightLines (stateful API — upstream behavior)
 
 ```python
-hl = syntect.HighlightLines(rust, ts, "base16-ocean.dark")
-# Constructor: (syntax_ref, theme_set, theme_name) — 3 args
+hl = syntect.HighlightLines(rust, ss, ts, "base16-ocean.dark")
+# Constructor: (syntax_ref, syntax_set, theme_set, theme_name) — 4 args
 
 tokens = hl.highlight_line("fn main() {}", ss)
 # Returns: List[Tuple[Style, str]] — 2 args (line, syntax_set)
 # Theme is baked in at construction
-
-all_tokens = hl.highlight_lines(code, ss, ts)
-# Returns: List[List[Tuple[Style, str]]] — 3 args (code, syntax_set, theme_set)
+# State persists across calls — unterminated blocks carry forward
 
 repr(hl)                                    # "HighlightLines()"
 ```
@@ -735,4 +733,4 @@ if theme is None:
 
 ---
 
-*Generated: 2026-06-30 · 258 tests passing · Zero compiler warnings · Stage 3 (Phases 26-29) complete · All 29 phases done*
+*Generated: 2026-06-30 · 337 tests passing · Zero compiler warnings · All phases complete · CI configured · Arc-based lazy cloning · 70 golden output tests*

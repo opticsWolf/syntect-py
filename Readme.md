@@ -3,7 +3,7 @@
 > High-quality syntax highlighting for Python using Sublime Text grammars, powered by the [syntect](https://github.com/trishume/syntect) Rust crate.
 > PyO3 0.29 · Python ≥ 3.9 · Pure Rust regex (no C dependencies)
 
-[![Tests](https://img.shields.io/badge/tests-258_passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-337_passing-brightgreen)]()
 [![Python](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)]()
 [![PyO3](https://img.shields.io/badge/pyo3-0.29-orange)]()
 
@@ -20,7 +20,7 @@
 - **Serialization** — dump/load syntax sets and themes as binary `.packdump`/`.themedump` files
 - **Zero C dependencies** — uses `regex-fancy` (pure Rust), no Oniguruma
 - **Full type stubs** — comprehensive `.pyi` stubs for IDE autocomplete and type checking
-- **258 tests** — covering all 29 implementation phases (Phases 11–29)
+- **337 tests** — covering all 29 implementation phases (Phases 11–29) plus 70 golden output tests
 
 ---
 
@@ -274,7 +274,10 @@ if theme is None:  # Returns None, does not raise
 syntect-py/
 ├── ARCHITECTURE.md       # Architecture documentation
 ├── QUICKREF.md           # Quick reference guide
-├── README.md             # This file
+├── CHANGELOG.md          # Version history
+├── DESIGN.md             # Design decisions
+├── Readme.md             # This file
+├── .github/workflows/ci.yml  # CI/CD pipeline
 ├── pyext/
 │   ├── Cargo.toml        # PyO3 + syntect dependencies
 │   ├── pyproject.toml    # maturin build configuration
@@ -295,7 +298,8 @@ syntect-py/
 │   │   ├── converters.rs # Py↔Rust conversion helpers
 │   │   └── errors.rs     # Exception types
 │   ├── examples/         # 9 example scripts
-│   └── tests/            # 230 tests
+│   ├── benches/          # Benchmark scripts (highlighting, loading, parsing)
+│   └── tests/            # 337 tests (15 test files + golden outputs)
 ```
 
 ---
@@ -330,7 +334,7 @@ python examples/basic_highlight.py
 | `ARCHITECTURE.md` | Architecture, module map, type mapping, design decisions |
 | `QUICKREF.md` | Complete API reference with examples and gotchas |
 | `syntect.pyi` | Type stubs for IDE autocomplete |
-| `docs/stage2-implementation-plan.md` | Implementation plan and changelog |
+| `docs/IMPROVEMENT_PLAN.md` | Remediation & improvement plan with phased execution |
 
 ---
 
@@ -341,7 +345,7 @@ cd pyext
 python -m pytest tests/ -v
 ```
 
-258 tests covering all 29 implementation phases (Phases 11–29).
+337 tests passing (267 original + 70 golden output tests). Includes stub conformance, LaTeX escaping, HTML/terminal output, CSS generation, and performance benchmarks.
 
 ---
 
@@ -356,4 +360,4 @@ python -m pytest tests/ -v
 
 ---
 
-*All 258 tests passing · Zero compiler warnings · PyO3 0.29 · Python ≥ 3.9 · Stage 3 complete*
+*All 337 tests passing · Zero compiler warnings · PyO3 0.29 · Python ≥ 3.9 · All phases complete · CI configured*

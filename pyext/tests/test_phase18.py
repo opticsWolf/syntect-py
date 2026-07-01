@@ -39,7 +39,7 @@ class TestClassedHTMLGenerator:
         classed_html = gen.finalize()
 
         tokens = hl.highlight_line("fn main()", ss, ts)
-        inline_html = syntect.styled_line_to_highlighted_html(tokens, "no")
+        inline_html = syntect.styled_line_to_highlighted_html(tokens, "no", None)
 
         assert "class=" in classed_html
         assert "style=" in inline_html
@@ -98,20 +98,20 @@ class TestStyledLineToHighlightedHtml:
     def test_basic_conversion(self, ss, rust, theme, hl, ts):
         """Test converting styled tokens to inline HTML."""
         tokens = hl.highlight_line("fn main()", ss, ts)
-        html = syntect.styled_line_to_highlighted_html(tokens, "no")
+        html = syntect.styled_line_to_highlighted_html(tokens, "no", None)
         assert "<span" in html
         assert "style=" in html
 
     def test_with_background(self, ss, rust, theme, hl, ts):
         """Test with background color included."""
         tokens = hl.highlight_line("fn main()", ss, ts)
-        html = syntect.styled_line_to_highlighted_html(tokens, "yes")
+        html = syntect.styled_line_to_highlighted_html(tokens, "yes", None)
         assert "background-color" in html
 
     def test_if_different(self, ss, rust, theme, hl, ts):
         """Test with if_different background policy."""
         tokens = hl.highlight_line("fn main()", ss, ts)
-        html = syntect.styled_line_to_highlighted_html(tokens, "if_different")
+        html = syntect.styled_line_to_highlighted_html(tokens, "if_different", None)
         assert "<span" in html
 
 

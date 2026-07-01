@@ -195,10 +195,9 @@ impl PyHighlightState {
 /// ```
 #[pyclass(name = "HighlightLines", skip_from_py_object)]
 pub struct PyHighlightLines {
-    #[allow(dead_code)]
-    syntax_name: String,
-    syntax_ref: syntect::parsing::SyntaxReference,
-    theme: syntect::highlighting::Theme,
+    /// Stateful highlighter that maintains parse state across lines.
+    /// The syntax/theme are leaked once per instance (not per call).
+    highlighter: syntect::easy::HighlightLines<'static>,
 }
 
 #[pymethods]
@@ -220,13 +219,14 @@ impl PyHighlightLines {
                 format!("Theme not found: {}", theme_name)
             ))?;
 
-        // Clone the syntax reference so we own it and can store it
-        let syntax_ref_clone = syntax.clone();
+        // Leak owned syntax/theme once per instance for 'static lifetime.
+        // This is a one-time cost, not per call.
+        let syntax_leaked = Box::leak(Box::new(syntax.clone()));
+        let theme_leaked = Box::leak(Box::new(real_theme.clone()));
+        let highlighter = HighlightLines::new(syntax_leaked, theme_leaked);
 
         Ok(PyHighlightLines {
-            syntax_name: syntax_ref.name.clone(),
-            syntax_ref: syntax_ref_clone,
-            theme: real_theme.clone(),
+            highlighter,
         })
     }
 
@@ -236,20 +236,21 @@ impl PyHighlightLines {
     ///
     /// Empty lines return an empty token list.
     ///
+    /// The highlighter maintains state across calls, so unterminated blocks
+    /// (e.g., comments, strings) carry state from previous lines.
+    ///
     /// Example:
     /// ```python
     /// hl = syntect.HighlightLines(rust, ss, ts, "Solarized (dark)")
     /// tokens = hl.highlight_line("fn main() {", ss)
     /// ```
-    pub fn highlight_line(&self, line: &str, syntax_set: &PySyntaxSet) -> PyResult<Vec<(PyStyle, String)>> {
+    pub fn highlight_line(&mut self, line: &str, syntax_set: &PySyntaxSet) -> PyResult<Vec<(PyStyle, String)>> {
         // Handle empty line early
         if line.is_empty() {
             return Ok(Vec::new());
         }
 
-        // Use the stored syntax reference (avoids lookup on each call)
-        let mut highlighter = HighlightLines::new(&self.syntax_ref, &self.theme);
-        match highlighter.highlight_line(line, &syntax_set.inner) {
+        match self.highlighter.highlight_line(line, &syntax_set.inner) {
             Ok(ranges) => {
                 let tokens: Vec<(PyStyle, String)> = ranges.iter().map(|(style, text)| {
                     (syntect_style_to_py(style), text.to_string())
@@ -274,6 +275,9 @@ impl PyHighlightLines {
 
 /// A syntax highlighter for a specific syntax and theme combination.
 ///
+/// Caches resolved syntax/theme references internally so highlight_line/highlight_lines
+/// don't re-resolve on every call.
+///
 /// Example:
 /// ```python
 /// hl = syntect.Highlighter(rust, theme)
@@ -284,6 +288,10 @@ impl PyHighlightLines {
 pub struct PyHighlighter {
     syntax_name: String,
     theme_name: String,
+    /// Cached resolved syntax reference — resolved once at construction.
+    syntax_ref: Option<syntect::parsing::SyntaxReference>,
+    /// Cached resolved theme — resolved once at construction.
+    theme: Option<syntect::highlighting::Theme>,
 }
 
 #[pymethods]
@@ -291,8 +299,10 @@ impl PyHighlighter {
     #[new]
     pub fn new(syntax_ref: &PySyntaxReference, theme: &PyTheme) -> Self {
         PyHighlighter {
-            syntax_name: syntax_ref.name.clone(),
+            syntax_name: (*syntax_ref.name).clone(),
             theme_name: theme.key().clone(),
+            syntax_ref: None,
+            theme: None,
         }
     }
 
@@ -302,37 +312,54 @@ impl PyHighlighter {
     ///
     /// Empty lines return an empty token list.
     ///
+    /// Uses cached syntax/theme references for subsequent calls (no re-resolution).
+    ///
     /// Example:
     /// ```python
     /// tokens = hl.highlight_line("fn main() {", ss, ts)
     /// for style, text in tokens:
     ///     print(style.foreground, text)
     /// ```
-    pub fn highlight_line(&self, line: &str, syntax_set: &PySyntaxSet, theme_set: &PyThemeSet) -> PyResult<Vec<(PyStyle, String)>> {
+    pub fn highlight_line(&mut self, line: &str, syntax_set: &PySyntaxSet, theme_set: &PyThemeSet) -> PyResult<Vec<(PyStyle, String)>> {
         // Handle empty line early
         if line.is_empty() {
             return Ok(Vec::new());
         }
 
-        let syntax_ref = syntax_set.inner.find_syntax_by_name(&self.syntax_name)
-            .ok_or_else(|| {
-                let available: Vec<String> = syntax_set.inner.syntaxes().iter()
-                    .map(|s| s.name.clone())
-                    .collect();
-                PyErr::new::<PyValueError, _>(
-                    format!("Syntax '{}' not found. Available syntaxes (showing first 10): {}", 
-                        self.syntax_name, available.iter().take(10).map(|s| s.clone()).collect::<Vec<String>>().join(", ")))
-            })?;
+        // Use cached references if available, otherwise resolve and cache
+        let (syntax_ref, real_theme) = if let (Some(s_ref), Some(t)) = (&self.syntax_ref, &self.theme) {
+            (s_ref.clone(), t.clone())
+        } else {
+            let sr = syntax_set.inner.find_syntax_by_name(&self.syntax_name)
+                .ok_or_else(|| {
+                    let available: Vec<String> = syntax_set.inner.syntaxes().iter()
+                        .map(|s| s.name.clone())
+                        .collect();
+                    PyErr::new::<PyValueError, _>(
+                        format!("Syntax '{}' not found. Available syntaxes (showing first 10): {}", 
+                            self.syntax_name, available.iter().take(10).map(|s| s.clone()).collect::<Vec<String>>().join(", ")))
+                })?;
 
-        let real_theme = theme_set.inner.themes.get(&self.theme_name)
-            .ok_or_else(|| {
-                let available: Vec<String> = theme_set.inner.themes.keys().cloned().collect();
-                PyErr::new::<PyValueError, _>(
-                    format!("Theme '{}' not found. Available themes: {}", 
-                        self.theme_name, available.join(", ")))
-            })?;
+            let rt = theme_set.inner.themes.get(&self.theme_name)
+                .ok_or_else(|| {
+                    let available: Vec<String> = theme_set.inner.themes.keys().cloned().collect();
+                    PyErr::new::<PyValueError, _>(
+                        format!("Theme '{}' not found. Available themes: {}", 
+                            self.theme_name, available.join(", ")))
+                })?;
 
-        let mut highlighter = HighlightLines::new(syntax_ref, real_theme);
+            // Clone before caching (sr/rt are references into the parent collections)
+            let sr_owned = sr.clone();
+            let rt_owned = rt.clone();
+
+            // Cache the resolved references
+            self.syntax_ref = Some(sr_owned);
+            self.theme = Some(rt_owned);
+
+            (sr.clone(), rt.clone())
+        };
+
+        let mut highlighter = HighlightLines::new(&syntax_ref, &real_theme);
         match highlighter.highlight_line(line, &syntax_set.inner) {
             Ok(ranges) => {
                 let tokens: Vec<(PyStyle, String)> = ranges.iter().map(|(style, text)| {
@@ -349,35 +376,55 @@ impl PyHighlighter {
     /// Highlight all lines in the code, returning tokens for each line.
     ///
     /// Handles both newline (\\n) and CRLF (\\r\\n) line endings correctly.
+    /// The highlighter maintains state across lines (e.g., unterminated
+    /// comments carry state forward).
+    ///
+    /// Uses cached syntax/theme references for subsequent calls.
     ///
     /// Empty code returns an empty list. Empty lines return empty token lists.
     ///
     /// Returns a list of token lists, one per line.
-    pub fn highlight_lines(&self, code: &str, syntax_set: &PySyntaxSet, theme_set: &PyThemeSet) -> PyResult<Vec<Vec<(PyStyle, String)>>> {
+    pub fn highlight_lines(&mut self, code: &str, syntax_set: &PySyntaxSet, theme_set: &PyThemeSet) -> PyResult<Vec<Vec<(PyStyle, String)>>> {
         // Handle empty code early
         if code.is_empty() {
             return Ok(Vec::new());
         }
 
-        let syntax_ref = syntax_set.inner.find_syntax_by_name(&self.syntax_name)
-            .ok_or_else(|| {
-                let available: Vec<String> = syntax_set.inner.syntaxes().iter()
-                    .map(|s| s.name.clone())
-                    .collect();
-                PyErr::new::<PyValueError, _>(
-                    format!("Syntax '{}' not found. Available syntaxes (showing first 10): {}", 
-                        self.syntax_name, available.iter().take(10).map(|s| s.clone()).collect::<Vec<String>>().join(", ")))
-            })?;
+        // Use cached references if available, otherwise resolve and cache
+        let (syntax_ref, real_theme) = if let (Some(s_ref), Some(t)) = (&self.syntax_ref, &self.theme) {
+            (s_ref.clone(), t.clone())
+        } else {
+            let sr = syntax_set.inner.find_syntax_by_name(&self.syntax_name)
+                .ok_or_else(|| {
+                    let available: Vec<String> = syntax_set.inner.syntaxes().iter()
+                        .map(|s| s.name.clone())
+                        .collect();
+                    PyErr::new::<PyValueError, _>(
+                        format!("Syntax '{}' not found. Available syntaxes (showing first 10): {}", 
+                            self.syntax_name, available.iter().take(10).map(|s| s.clone()).collect::<Vec<String>>().join(", ")))
+                })?;
 
-        let real_theme = theme_set.inner.themes.get(&self.theme_name)
-            .ok_or_else(|| {
-                let available: Vec<String> = theme_set.inner.themes.keys().cloned().collect();
-                PyErr::new::<PyValueError, _>(
-                    format!("Theme '{}' not found. Available themes: {}", 
-                        self.theme_name, available.join(", ")))
-            })?;
+            let rt = theme_set.inner.themes.get(&self.theme_name)
+                .ok_or_else(|| {
+                    let available: Vec<String> = theme_set.inner.themes.keys().cloned().collect();
+                    PyErr::new::<PyValueError, _>(
+                        format!("Theme '{}' not found. Available themes: {}", 
+                            self.theme_name, available.join(", ")))
+                })?;
 
-        let mut highlighter = HighlightLines::new(syntax_ref, real_theme);
+            // Clone before caching (sr/rt are references into the parent collections)
+            let sr_owned = sr.clone();
+            let rt_owned = rt.clone();
+
+            // Cache the resolved references
+            self.syntax_ref = Some(sr_owned);
+            self.theme = Some(rt_owned);
+
+            (sr.clone(), rt.clone())
+        };
+
+        // Use a stateful HighlightLines that maintains parse state across lines
+        let mut highlighter = HighlightLines::new(&syntax_ref, &real_theme);
         let mut all_tokens: Vec<Vec<(PyStyle, String)>> = Vec::new();
 
         let lines_with_endings = split_lines_with_endings(code);
@@ -417,7 +464,7 @@ impl PyHighlighter {
     ///     for style, text in line_tokens:
     ///         print(style.foreground, text)
     /// ```
-    pub fn highlight_file(&self, path: &str, syntax_set: &PySyntaxSet, theme_set: &PyThemeSet) -> PyResult<Vec<Vec<(PyStyle, String)>>> {
+    pub fn highlight_file(&mut self, path: &str, syntax_set: &PySyntaxSet, theme_set: &PyThemeSet) -> PyResult<Vec<Vec<(PyStyle, String)>>> {
         // Read the file
         let content = match std::fs::read_to_string(path) {
             Ok(content) => content,
@@ -495,6 +542,8 @@ impl PyHighlighter {
         Ok(PyHighlighter {
             syntax_name: String::new(),
             theme_name: theme.key().clone(),
+            syntax_ref: None,
+            theme: None,
         })
     }
 
@@ -510,10 +559,10 @@ impl PyHighlighter {
 
 /// High-level function to highlight a string with auto-loading of syntax/theme.
 ///
-/// Returns a HighlightResult with tokens (real PyStyle objects), HTML, and
-/// terminal escape output.
+/// Returns a HighlightResult with tokens (real PyStyle objects). HTML and
+/// terminal escape output are computed lazily on first access (OnceLock).
 ///
-/// Empty strings return an empty HighlightResult with no tokens or HTML.
+/// Empty strings return an empty HighlightResult with no tokens.
 ///
 /// Example:
 /// ```python
@@ -526,7 +575,7 @@ impl PyHighlighter {
 /// )
 /// for style, text in result.tokens:
 ///     print(style.foreground, text)
-/// print(result.html)
+/// print(result.html)  # computed lazily on first access
 /// ```
 #[pyfunction]
 pub fn highlight_string(
@@ -540,8 +589,9 @@ pub fn highlight_string(
     if code.is_empty() {
         return Ok(crate::convenience::PyHighlightResult {
             tokens: Vec::new(),
-            html: String::new(),
-            terminal_escaped: String::new(),
+            native_tokens: Vec::new(),
+            html: std::sync::OnceLock::new(),
+            terminal_escaped: std::sync::OnceLock::new(),
         });
     }
 
@@ -569,40 +619,47 @@ pub fn highlight_string(
     // Create highlighter and highlight
     let mut highlighter = HighlightLines::new(syntax_ref, theme);
 
-    // Highlight all lines
-    let mut all_tokens: Vec<(PyStyle, String)> = Vec::new();
+    // Use split_lines_with_endings to correctly handle CRLF line endings.
+    // This strips \r from tokens when the input uses \r\n endings.
     let lines_with_endings = split_lines_with_endings(code);
+    let estimated_tokens = lines_with_endings.len() * 8; // avg 8 tokens per line
+
+    // Highlight all lines — collect native syntect tokens first (no PyStyle overhead)
+    let mut native_tokens: Vec<(syntect::highlighting::Style, String)> = Vec::with_capacity(estimated_tokens);
+
     for (line, _ending) in lines_with_endings {
         match highlighter.highlight_line(&line, &syntax_set.inner) {
             Ok(ranges) => {
                 for (style, text) in ranges {
-                    all_tokens.push((syntect_style_to_py(&style), text.to_string()));
+                    native_tokens.push((style, text.to_string()));
                 }
             }
             Err(_) => {
-                all_tokens.push((
-                    PyStyle {
-                        foreground: PyColor { r: 0, g: 0, b: 0, a: 0 },
-                        background: PyColor { r: 0, g: 0, b: 0, a: 0 },
-                        font_style: PyFontStyle { bits: 0 },
-                    },
-                    line
-                ));
+                let default_style = syntect::highlighting::Style {
+                    foreground: syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 0 },
+                    background: syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 0 },
+                    font_style: syntect::highlighting::FontStyle::empty(),
+                };
+                native_tokens.push((default_style, line));
             }
         }
     }
 
-    // Generate HTML using syntect's real function
-    let html = syntect::html::highlighted_html_for_string(code, &syntax_set.inner, syntax_ref, theme)
-        .unwrap_or_else(|_| format!("<pre><code>{}</code></pre>", code.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")));
+    // Convert to PyStyle for the API tokens field (single pass)
+    let all_tokens: Vec<(PyStyle, String)> = native_tokens
+        .iter()
+        .map(|(style, text)| (syntect_style_to_py(style), text.clone()))
+        .collect();
 
-    // Generate terminal escaped using real implementation
-    let terminal_escaped = crate::util::as_terminal_escaped_impl(&all_tokens, false)
-        .unwrap_or_else(|e| format!("Error: {}", e));
-
+    // HTML and terminal are computed lazily on first access via OnceLock.
+    // This avoids paying for output that the caller may never need.
     Ok(crate::convenience::PyHighlightResult {
         tokens: all_tokens,
-        html,
-        terminal_escaped,
+        native_tokens: native_tokens,
+        html: std::sync::OnceLock::new(),
+        terminal_escaped: std::sync::OnceLock::new(),
     })
 }
+
+
+

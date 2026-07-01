@@ -1,8 +1,25 @@
 //! Python bindings for syntect's syntax set management.
 
 use pyo3::prelude::*;
+use std::sync::Arc;
 use syntect::parsing::SyntaxSet as SyntectSyntaxSet;
 use crate::errors;
+
+// ============================================================================
+// Helper: Convert syntect SyntaxReference to PySyntaxReference with Arc fields
+// ============================================================================
+
+fn syntax_ref_to_py(s: &syntect::parsing::SyntaxReference) -> PySyntaxReference {
+    PySyntaxReference {
+        name: Arc::new(s.name.clone()),
+        file_extensions: Arc::new(s.file_extensions.clone()),
+        scope: Arc::new(s.scope.to_string()),
+        hidden: s.hidden,
+        first_line_match: s.first_line_match.clone().map(Arc::new),
+        version: s.version,
+        variables: Arc::new(s.variables.iter().map(|(k, v)| (k.clone(), v.clone())).collect()),
+    }
+}
 
 // ============================================================================
 // PySyntaxReference (read-only wrapper)
@@ -23,30 +40,31 @@ use crate::errors;
 /// ```
 #[pyclass(skip_from_py_object)]
 pub struct PySyntaxReference {
-    pub name: String,
-    pub file_extensions: Vec<String>,
-    pub scope: String,
+    // Arc<String> for cheap cloning — clone() is O(1) pointer copy.
+    pub name: Arc<String>,
+    pub file_extensions: Arc<Vec<String>>,
+    pub scope: Arc<String>,
     pub hidden: bool,
-    pub first_line_match: Option<String>,
+    pub first_line_match: Option<Arc<String>>,
     pub version: u32,
-    pub variables: Vec<(String, String)>,
+    pub variables: Arc<Vec<(String, String)>>,
 }
 
 #[pymethods]
 impl PySyntaxReference {
     #[getter]
     pub fn name(&self) -> String {
-        self.name.clone()
+        (*self.name).clone()
     }
 
     #[getter]
     pub fn file_extensions(&self) -> Vec<String> {
-        self.file_extensions.clone()
+        (*self.file_extensions).clone()
     }
 
     #[getter]
     pub fn scope(&self) -> String {
-        self.scope.clone()
+        (*self.scope).clone()
     }
 
     #[getter]
@@ -59,7 +77,7 @@ impl PySyntaxReference {
     /// This is a regex that matches the first line of files using this syntax.
     #[getter]
     pub fn first_line_match(&self) -> Option<String> {
-        self.first_line_match.clone()
+        self.first_line_match.as_ref().map(|arc| (**arc).clone())
     }
 
     /// Get the sublime-syntax format version (1 or 2).
@@ -76,13 +94,13 @@ impl PySyntaxReference {
     /// Variables are key-value pairs used for substitution in scope patterns.
     #[getter]
     pub fn variables(&self) -> Vec<(String, String)> {
-        self.variables.clone()
+        (*self.variables).clone()
     }
 
     pub fn __repr__(&self) -> String {
         format!(
             "SyntaxReference(name='{}', scope='{}', version={})",
-            self.name, self.scope, self.version
+            *self.name, *self.scope, self.version
         )
     }
 }
@@ -237,83 +255,34 @@ impl PySyntaxSet {
     }
 
     pub fn find_syntax_by_extension(&self, ext: &str) -> Option<PySyntaxReference> {
-        self.inner.find_syntax_by_extension(ext).map(|s| PySyntaxReference {
-            name: s.name.clone(),
-            file_extensions: s.file_extensions.clone(),
-            scope: s.scope.to_string(),
-            hidden: s.hidden,
-            first_line_match: s.first_line_match.clone(),
-            version: s.version,
-            variables: s.variables.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-        })
+        self.inner.find_syntax_by_extension(ext).map(syntax_ref_to_py)
     }
 
     pub fn find_syntax_by_name(&self, name: &str) -> Option<PySyntaxReference> {
-        self.inner.find_syntax_by_name(name).map(|s| PySyntaxReference {
-            name: s.name.clone(),
-            file_extensions: s.file_extensions.clone(),
-            scope: s.scope.to_string(),
-            hidden: s.hidden,
-            first_line_match: s.first_line_match.clone(),
-            version: s.version,
-            variables: s.variables.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-        })
+        self.inner.find_syntax_by_name(name).map(syntax_ref_to_py)
     }
 
     pub fn find_syntax_by_scope(&self, scope: &str) -> Option<PySyntaxReference> {
         match syntect::parsing::Scope::new(scope) {
-            Ok(s) => self.inner.find_syntax_by_scope(s).map(|s| PySyntaxReference {
-                name: s.name.clone(),
-                file_extensions: s.file_extensions.clone(),
-                scope: s.scope.to_string(),
-                hidden: s.hidden,
-                first_line_match: s.first_line_match.clone(),
-                version: s.version,
-                variables: s.variables.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-            }),
+            Ok(s) => self.inner.find_syntax_by_scope(s).map(syntax_ref_to_py),
             Err(_) => None,
         }
     }
 
     pub fn find_syntax_for_file(&self, path: &str) -> PyResult<Option<PySyntaxReference>> {
         match self.inner.find_syntax_for_file(path) {
-            Ok(Some(s)) => Ok(Some(PySyntaxReference {
-                name: s.name.clone(),
-                file_extensions: s.file_extensions.clone(),
-                scope: s.scope.to_string(),
-                hidden: s.hidden,
-                first_line_match: s.first_line_match.clone(),
-                version: s.version,
-                variables: s.variables.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-            })),
+            Ok(Some(s)) => Ok(Some(syntax_ref_to_py(&s))),
             Ok(None) => Ok(None),
             Err(_) => Ok(None),
         }
     }
 
     pub fn find_syntax_plain_text(&self) -> PySyntaxReference {
-        let s = self.inner.find_syntax_plain_text();
-        PySyntaxReference {
-            name: s.name.clone(),
-            file_extensions: s.file_extensions.clone(),
-            scope: s.scope.to_string(),
-            hidden: s.hidden,
-            first_line_match: s.first_line_match.clone(),
-            version: s.version,
-            variables: s.variables.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-        }
+        syntax_ref_to_py(&self.inner.find_syntax_plain_text())
     }
 
     pub fn syntaxes(&self) -> Vec<PySyntaxReference> {
-        self.inner.syntaxes().iter().map(|s| PySyntaxReference {
-            name: s.name.clone(),
-            file_extensions: s.file_extensions.clone(),
-            scope: s.scope.to_string(),
-            hidden: s.hidden,
-            first_line_match: s.first_line_match.clone(),
-            version: s.version,
-            variables: s.variables.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-        }).collect()
+        self.inner.syntaxes().iter().map(syntax_ref_to_py).collect()
     }
 
     /// Create a SyntaxSet from a .packdump file.
@@ -360,8 +329,8 @@ impl PySyntaxSet {
 
     /// Get the metadata loaded from `.tmPreferences` files.
     ///
-    /// Returns None if no metadata was loaded or if the metadata feature
-    /// is not enabled.
+    /// Returns a Metadata object if available, or None if no metadata
+    /// was loaded (e.g., the SyntaxSet was built without .tmPreferences files).
     ///
     /// Example:
     /// ```python
@@ -373,11 +342,11 @@ impl PySyntaxSet {
     /// ```
     #[cfg(feature = "metadata")]
     pub fn metadata(&self) -> Option<crate::metadata::PyMetadata> {
-        // Note: syntect's SyntaxSet.metadata field is private in v5.3.0
-        // We can't access it directly. Return None for now.
-        // This is a known limitation - metadata is accessible via
-        // SyntaxSetBuilder during construction, but not from loaded SyntaxSet.
-        None
+        let meta = self.inner.metadata();
+        if meta.scoped_metadata.is_empty() {
+            return None;
+        }
+        Some(crate::metadata::convert_metadata(meta))
     }
 
     #[cfg(not(feature = "metadata"))]

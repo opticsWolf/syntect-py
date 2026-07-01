@@ -1,5 +1,12 @@
 #!/usr/bin/env python
-"""Write html.rs file"""
+#
+# DEPRECATED: This script used to generate pyext/src/html.rs but is now stale.
+# The checked-in html.rs is hand-maintained and is the source of truth.
+# DO NOT RUN THIS SCRIPT — it will overwrite html.rs with a stripped-down
+# version that breaks the build.
+#
+# See docs/IMPROVEMENT_PLAN.md §4.1 for details.
+#
 
 content = r'''//! Python bindings for syntect's HTML output utilities.
 

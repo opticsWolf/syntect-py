@@ -1,391 +1,450 @@
-"""Performance comparison: syntect-py vs Pygments.
+"""Performance comparison: syntect-py vs fastpylight vs Pygments.
 
 Usage:
-    python benchmark_comparison.py                    # Run all benchmarks
-    python benchmark_comparison.py --iterations 1000  # Custom iteration count
+    python benchmark_comparison.py                     # Run all comparisons
+    python benchmark_comparison.py --iterations 1000   # Custom iteration count
 """
 import timeit
 import syntect
-from pygments import highlight as pygments_highlight
-from pygments.lexers import get_lexer_by_name, find_lexer_class_for_filename
-from pygments.formatters import get_formatter_by_name
+
+try:
+    from fastpylight import highlight as fastpylight_highlight
+    from fastpylight import highlight_spans as fastpylight_spans
+    HAS_FASTPYLIGHT = True
+except ImportError:
+    HAS_FASTPYLIGHT = False
+
+try:
+    from pygments import highlight as pygments_highlight
+    from pygments.lexers import get_lexer_by_name, find_lexer_class_for_filename
+    from pygments.formatters import get_formatter_by_name
+    HAS_PYGRAMENTS = True
+except ImportError:
+    HAS_PYGRAMENTS = False
 
 
-# --- Rust code benchmarks ---
+# ── Rust code benchmarks ──────────────────────────────────────────────────
+
+RUST_SMALL = 'fn main() {\n    let x = 42;\n    println!("Hello, world!");\n}'
+RUST_MEDIUM = '''use std::collections::HashMap;
+
+fn main() {
+    let mut map: HashMap<String, Vec<i32>> = HashMap::new();
+    for i in 0..100 {
+        let key = format!("key_{}", i % 10);
+        if !map.contains_key(&key) {
+            map.insert(key, Vec::new());
+        }
+        map[key].push(i);
+    }
+    for (key, values) in map {
+        println!("{}: {} items, sum={}", key, values.len(), values.iter().sum::<i32>());
+    }
+}
+
+struct Calculator {
+    history: Vec<String>,
+}
+
+impl Calculator {
+    fn new() -> Self {
+        Calculator { history: Vec::new() }
+    }
+    
+    fn add(&mut self, a: i32, b: i32) -> i32 {
+        let result = a + b;
+        self.history.push(format!("{} + {} = {}", a, b, result));
+        result
+    }
+    
+    fn multiply(&mut self, a: i32, b: i32) -> i32 {
+        let result = a * b;
+        self.history.push(format!("{} * {} = {}", a, b, result));
+        result
+    }
+}'''
+
 
 def bench_syntect_rust_highlight_string(iterations=100):
-    """syntect-py: highlight_string with Rust code."""
     ss = syntect.SyntaxSet.load_defaults(False)
     ts = syntect.ThemeSet.load_defaults()
-    code = 'fn main() {\n    let x = 42;\n    println!("Hello, world!");\n}'
-    
-    setup = """
+    code = RUST_SMALL
+    setup = f"""
 import syntect
 ss = syntect.SyntaxSet.load_defaults(False)
 ts = syntect.ThemeSet.load_defaults()
-code = 'fn main() {\\n    let x = 42;\\n    println!("Hello, world!");\\n}'
+code = {repr(RUST_SMALL)}
 """
-    stmt = """
-syntect.highlight_string(code, "Rust", "base16-ocean.dark", ss, ts)
+    stmt = 'syntect.highlight_string(code, "Rust", "base16-ocean.dark", ss, ts)'
+    times = timeit.repeat(stmt, setup, repeat=5, number=iterations)
+    return min(times) / iterations * 1000
+
+
+def bench_fastpylight_rust_highlight(iterations=100):
+    if not HAS_FASTPYLIGHT:
+        return None
+    setup = f"""
+from fastpylight import highlight
+code = {repr(RUST_SMALL)}
 """
+    stmt = 'highlight(code, "rust")'
+    times = timeit.repeat(stmt, setup, repeat=5, number=iterations)
+    return min(times) / iterations * 1000
+
+
+def bench_fastpylight_rust_spans(iterations=100):
+    if not HAS_FASTPYLIGHT:
+        return None
+    setup = f"""
+from fastpylight import highlight_spans
+code = {repr(RUST_SMALL)}
+"""
+    stmt = 'highlight_spans(code, "rust", "hl-")'
     times = timeit.repeat(stmt, setup, repeat=5, number=iterations)
     return min(times) / iterations * 1000
 
 
 def bench_pygments_rust_highlight_string(iterations=100):
-    """Pygments: highlight with Rust code."""
-    code = 'fn main() {\n    let x = 42;\n    println!("Hello, world!");\n}'
-    
-    setup = """
+    if not HAS_PYGRAMENTS:
+        return None
+    setup = f"""
 from pygments import highlight
 from pygments.lexers import get_lexer_by_name
 from pygments.formatters import get_formatter_by_name
-code = 'fn main() {\\n    let x = 42;\\n    println!("Hello, world!");\\n}'
+code = {repr(RUST_SMALL)}
 lexer = get_lexer_by_name('rust')
 formatter = get_formatter_by_name('html')
 """
-    stmt = """
-highlight(code, lexer, formatter)
-"""
+    stmt = 'highlight(code, lexer, formatter)'
     times = timeit.repeat(stmt, setup, repeat=5, number=iterations)
     return min(times) / iterations * 1000
 
 
 def bench_syntect_rust_highlight_line(iterations=100):
-    """syntect-py: highlight_line with Rust code."""
     ss = syntect.SyntaxSet.load_defaults(False)
     ts = syntect.ThemeSet.load_defaults()
     rust = ss.find_syntax_by_name("Rust")
     theme = ts.get_theme("base16-ocean.dark")
     hl = syntect.Highlighter(rust, theme)
     line = "    let x = 42;"
-    
-    setup = """
+    setup = f"""
 import syntect
 ss = syntect.SyntaxSet.load_defaults(False)
 ts = syntect.ThemeSet.load_defaults()
 rust = ss.find_syntax_by_name("Rust")
 theme = ts.get_theme("base16-ocean.dark")
 hl = syntect.Highlighter(rust, theme)
-line = "    let x = 42;"
+line = {repr(line)}
 """
-    stmt = """
-hl.highlight_line(line, ss, ts)
+    stmt = 'hl.highlight_line(line, ss, ts)'
+    times = timeit.repeat(stmt, setup, repeat=5, number=iterations)
+    return min(times) / iterations * 1000
+
+
+def bench_fastpylight_rust_line(iterations=100):
+    if not HAS_FASTPYLIGHT:
+        return None
+    line = "    let x = 42;"
+    setup = f"""
+from fastpylight import highlight
+line = {repr(line)}
 """
+    stmt = 'highlight(line, "rust")'
     times = timeit.repeat(stmt, setup, repeat=5, number=iterations)
     return min(times) / iterations * 1000
 
 
 def bench_pygments_rust_highlight_line(iterations=100):
-    """Pygments: lex + format a single line with Rust code."""
+    if not HAS_PYGRAMENTS:
+        return None
     line = "    let x = 42;"
-    
-    setup = """
+    setup = f"""
 from pygments import highlight
 from pygments.lexers import get_lexer_by_name
 from pygments.formatters import get_formatter_by_name
-line = "    let x = 42;"
+line = {repr(line)}
 lexer = get_lexer_by_name('rust')
 formatter = get_formatter_by_name('html')
 """
-    stmt = """
-highlight(line, lexer, formatter)
-"""
+    stmt = 'highlight(line, lexer, formatter)'
     times = timeit.repeat(stmt, setup, repeat=5, number=iterations)
     return min(times) / iterations * 1000
 
 
-# --- Python code benchmarks ---
+# ── Python code benchmarks ────────────────────────────────────────────────
 
-def bench_syntect_python_highlight_string(iterations=10):
-    """syntect-py: highlight_string with Python code."""
-    ss = syntect.SyntaxSet.load_defaults(False)
-    ts = syntect.ThemeSet.load_defaults()
-    code = '''def main():
-    """Main entry point."""
-    items = [1, 2, 3, 4, 5]
-    result = []
-    for item in items:
-        if item % 2 == 0:
-            result.append(item * 2)
-        else:
-            result.append(item * 3)
-    return result
+PYTHON_MEDIUM = '''def compute_primes(limit):
+    """Sieve of Eratosthenes for finding prime numbers."""
+    if limit < 2:
+        return []
+    sieve = [True] * (limit + 1)
+    sieve[0] = sieve[1] = False
+    for i in range(2, int(limit**0.5) + 1):
+        if sieve[i]:
+            for j in range(i*i, limit + 1, i):
+                sieve[j] = False
+    return [i for i, is_prime in enumerate(sieve) if is_prime]
 
-class Calculator:
-    """Simple calculator class."""
+
+class DataProcessor:
+    """Process and analyze data streams."""
     
-    def __init__(self):
-        self.history = []
+    def __init__(self, buffer_size=1024):
+        self.buffer_size = buffer_size
+        self.data = []
+        self.stats = {}
     
-    def add(self, a, b):
-        result = a + b
-        self.history.append(f"{a} + {b} = {result}")
-        return result
+    def add_batch(self, batch):
+        """Add a batch of data points."""
+        self.data.extend(batch)
+        if len(self.data) > self.buffer_size * 10:
+            self.data = self.data[-self.buffer_size * 5:]
+        self._update_stats()
     
-    def multiply(self, a, b):
-        result = a * b
-        self.history.append(f"{a} * {b} = {result}")
-        return result
+    def _update_stats(self):
+        if not self.data:
+            return
+        self.stats = {
+            "count": len(self.data),
+            "mean": sum(self.data) / len(self.data),
+            "min": min(self.data),
+            "max": max(self.data),
+        }
+    
+    def export(self, fmt="csv"):
+        """Export data in the specified format."""
+        if fmt == "csv":
+            return "\\n".join(str(v) for v in self.data)
+        elif fmt == "json":
+            import json
+            return json.dumps({"data": self.data, "stats": self.stats})
+        return str(self.data)
+
 
 if __name__ == "__main__":
-    calc = Calculator()
-    calc.add(10, 20)
-    calc.multiply(5, 6)
-    print(calc.history)
-'''
-    
-    setup = """
+    processor = DataProcessor()
+    primes = compute_primes(1000)
+    processor.add_batch(primes[:100])
+    print(processor.export("json"))'''
+
+
+def bench_syntect_python_highlight_string(iterations=10):
+    ss = syntect.SyntaxSet.load_defaults(False)
+    ts = syntect.ThemeSet.load_defaults()
+    code = PYTHON_MEDIUM
+    setup = f"""
 import syntect
 ss = syntect.SyntaxSet.load_defaults(False)
 ts = syntect.ThemeSet.load_defaults()
-code = '''def main():
-    items = [1, 2, 3, 4, 5]
-    result = []
-    for item in items:
-        if item % 2 == 0:
-            result.append(item * 2)
-        else:
-            result.append(item * 3)
-    return result
-
-class Calculator:
-    def __init__(self):
-        self.history = []
-    
-    def add(self, a, b):
-        return a + b
-    
-    def multiply(self, a, b):
-        return a * b
-
-if __name__ == "__main__":
-    calc = Calculator()
-    calc.add(10, 20)
-    calc.multiply(5, 6)'''
+code = {repr(PYTHON_MEDIUM)}
 """
-    stmt = """
-syntect.highlight_string(code, "Python", "base16-ocean.dark", ss, ts)
+    stmt = 'syntect.highlight_string(code, "Python", "base16-ocean.dark", ss, ts)'
+    times = timeit.repeat(stmt, setup, repeat=5, number=iterations)
+    return min(times) / iterations * 1000
+
+
+def bench_fastpylight_python_highlight(iterations=10):
+    if not HAS_FASTPYLIGHT:
+        return None
+    setup = f"""
+from fastpylight import highlight
+code = {repr(PYTHON_MEDIUM)}
 """
+    stmt = 'highlight(code, "python")'
+    times = timeit.repeat(stmt, setup, repeat=5, number=iterations)
+    return min(times) / iterations * 1000
+
+
+def bench_fastpylight_python_spans(iterations=10):
+    if not HAS_FASTPYLIGHT:
+        return None
+    setup = f"""
+from fastpylight import highlight_spans
+code = {repr(PYTHON_MEDIUM)}
+"""
+    stmt = 'highlight_spans(code, "python", "hl-")'
     times = timeit.repeat(stmt, setup, repeat=5, number=iterations)
     return min(times) / iterations * 1000
 
 
 def bench_pygments_python_highlight_string(iterations=10):
-    """Pygments: highlight with Python code."""
-    code = '''def main():
-    """Main entry point."""
-    items = [1, 2, 3, 4, 5]
-    result = []
-    for item in items:
-        if item % 2 == 0:
-            result.append(item * 2)
-        else:
-            result.append(item * 3)
-    return result
-
-class Calculator:
-    """Simple calculator class."""
-    
-    def __init__(self):
-        self.history = []
-    
-    def add(self, a, b):
-        result = a + b
-        self.history.append(f"{a} + {b} = {result}")
-        return result
-    
-    def multiply(self, a, b):
-        result = a * b
-        self.history.append(f"{a} * {b} = {result}")
-        return result
-
-if __name__ == "__main__":
-    calc = Calculator()
-    calc.add(10, 20)
-    calc.multiply(5, 6)
-    print(calc.history)
-'''
-    
-    setup = """
+    if not HAS_PYGRAMENTS:
+        return None
+    setup = f"""
 from pygments import highlight
 from pygments.lexers import get_lexer_by_name
 from pygments.formatters import get_formatter_by_name
-code = '''def main():
-    items = [1, 2, 3, 4, 5]
-    result = []
-    for item in items:
-        if item % 2 == 0:
-            result.append(item * 2)
-        else:
-            result.append(item * 3)
-    return result
-
-class Calculator:
-    def __init__(self):
-        self.history = []
-    
-    def add(self, a, b):
-        return a + b
-    
-    def multiply(self, a, b):
-        return a * b
-
-if __name__ == "__main__":
-    calc = Calculator()
-    calc.add(10, 20)
-    calc.multiply(5, 6)'''
+code = {repr(PYTHON_MEDIUM)}
 lexer = get_lexer_by_name('python')
 formatter = get_formatter_by_name('html')
 """
-    stmt = """
-highlight(code, lexer, formatter)
-"""
+    stmt = 'highlight(code, lexer, formatter)'
     times = timeit.repeat(stmt, setup, repeat=5, number=iterations)
     return min(times) / iterations * 1000
 
 
-# --- Lexer detection benchmarks ---
+# ── Lexer detection benchmarks ────────────────────────────────────────────
 
-def bench_syntect_syntax_detection(iterations=1000):
-    """syntect-py: find_syntax_by_extension."""
+def bench_syntect_detection(iterations=1000):
     ss = syntect.SyntaxSet.load_defaults(False)
-    
     setup = """
 import syntect
 ss = syntect.SyntaxSet.load_defaults(False)
 """
-    stmt = """
-ss.find_syntax_by_extension("rs")
-"""
+    stmt = 'ss.find_syntax_by_extension("rs")'
     times = timeit.repeat(stmt, setup, repeat=5, number=iterations)
     return min(times) / iterations * 1000
 
 
 def bench_pygments_lexer_detection(iterations=1000):
-    """Pygments: find_lexer_class_for_filename."""
+    if not HAS_PYGRAMENTS:
+        return None
     setup = """
 from pygments.lexers import find_lexer_class_for_filename
 """
-    stmt = """
-find_lexer_class_for_filename("main.rs")
-"""
+    stmt = 'find_lexer_class_for_filename("main.rs")'
     times = timeit.repeat(stmt, setup, repeat=5, number=iterations)
     return min(times) / iterations * 1000
 
 
-# --- CSS Generation (syntect only) ---
+# ── CSS Generation ────────────────────────────────────────────────────────
 
 def bench_syntect_css(iterations=100):
-    """syntect-py: css_for_theme."""
     ts = syntect.ThemeSet.load_defaults()
     theme = ts.get_theme("base16-ocean.dark")
-    
     setup = """
 import syntect
 ts = syntect.ThemeSet.load_defaults()
 theme = ts.get_theme("base16-ocean.dark")
 """
-    stmt = """
-syntect.css_for_theme(theme, "spaced")
-"""
+    stmt = 'syntect.css_for_theme(theme, "spaced")'
     times = timeit.repeat(stmt, setup, repeat=5, number=iterations)
     return min(times) / iterations * 1000
 
 
-def run_comparison(name, iterations=100, syntect_fn=None, pygments_fn=None):
+def bench_fastpylight_css(iterations=100):
+    if not HAS_FASTPYLIGHT:
+        return None
+    setup = """
+from fastpylight import theme_css
+"""
+    stmt = 'theme_css("github_light")'
+    times = timeit.repeat(stmt, setup, repeat=5, number=iterations)
+    return min(times) / iterations * 1000
+
+
+# ── Comparison runner ─────────────────────────────────────────────────────
+
+def run_comparison(name, iterations, **benchmarks):
     """Run a comparison benchmark and print results."""
     print(f"\n--- {name} ---")
     
-    if syntect_fn is None:
-        syntect_fn = f"bench_syntect_{name.lower().replace(' ', '_').replace('-', '_')}"
-    if pygments_fn is None:
-        pygments_fn = f"bench_pygments_{name.lower().replace(' ', '_').replace('-', '_')}"
+    results = {}
+    for lib_name, (fn, enabled) in benchmarks.items():
+        if not enabled:
+            print(f"  {lib_name:25s} SKIPPED")
+            continue
+        t = timeit.timeit(
+            f"{fn.__name__}({iterations})",
+            globals=globals(),
+            number=1
+        )
+        results[lib_name] = t
+        print(f"  {lib_name:25s} {t:8.3f}ms")
     
-    # syntect
-    t1 = timeit.timeit(
-        f"{syntect_fn}({iterations})",
-        globals=globals(),
-        number=1
-    )
-    
-    # pygments
-    t2 = timeit.timeit(
-        f"{pygments_fn}({iterations})",
-        globals=globals(),
-        number=1
-    )
-    
-    speedup = t2 / t1 if t1 > 0 else float('inf')
-    
-    print(f"  syntect-py:    {t1:8.3f}ms")
-    print(f"  Pygments:      {t2:8.3f}ms")
-    print(f"  syntect is     {speedup:6.1f}x faster")
-    
-    return {"syntect": t1, "pygments": t2, "speedup": speedup}
+    return results
 
 
 def run_all_comparisons(iterations=100):
     """Run all comparison benchmarks."""
     print("\n" + "=" * 70)
-    print("  syntect-py vs Pygments — Performance Comparison")
+    print("  syntect-py vs fastpylight vs Pygments — Performance Comparison")
     print("=" * 70)
-    print("\n  Note: syntect-py uses Rust (regex-fancy, pure Rust regex engine)")
-    print("        Pygments is pure Python (uses Python's re module)")
+    print("\n  syntect-py:    Rust (Syntect, regex-fancy, Sublime Text grammars)")
+    print("  fastpylight:   Rust (Tree-sitter, Lumis)")
+    print("  Pygments:      Python (re module)")
     print("\n  Lower is better (fewer milliseconds per operation)")
     print("=" * 70)
     
-    results = {}
+    all_results = {}
     
-    # Rust code
-    results["Rust highlight_string"] = run_comparison("Rust highlight_string", max(10, iterations // 5))
-    results["Rust highlight_line"] = run_comparison("Rust highlight_line", max(10, iterations // 5))
+    # Rust small
+    rust_iter = max(10, iterations // 5)
+    all_results["Rust highlight_string"] = run_comparison(
+        "Rust highlight_string", rust_iter,
+        **{
+            "syntect-py": (bench_syntect_rust_highlight_string, True),
+            "fastpylight (toks)": (bench_fastpylight_rust_highlight, HAS_FASTPYLIGHT),
+            "fastpylight (spans)": (bench_fastpylight_rust_spans, HAS_FASTPYLIGHT),
+            "Pygments": (bench_pygments_rust_highlight_string, HAS_PYGRAMENTS),
+        }
+    )
     
-    # Python code
-    results["Python highlight_string"] = run_comparison("Python highlight_string", max(5, iterations // 20))
+    # Rust highlight_line
+    all_results["Rust highlight_line"] = run_comparison(
+        "Rust highlight_line", rust_iter,
+        **{
+            "syntect-py": (bench_syntect_rust_highlight_line, True),
+            "fastpylight": (bench_fastpylight_rust_line, HAS_FASTPYLIGHT),
+            "Pygments": (bench_pygments_rust_highlight_line, HAS_PYGRAMENTS),
+        }
+    )
+    
+    # Python highlight_string
+    py_iter = max(5, iterations // 20)
+    all_results["Python highlight_string"] = run_comparison(
+        "Python highlight_string", py_iter,
+        **{
+            "syntect-py": (bench_syntect_python_highlight_string, True),
+            "fastpylight (toks)": (bench_fastpylight_python_highlight, HAS_FASTPYLIGHT),
+            "fastpylight (spans)": (bench_fastpylight_python_spans, HAS_FASTPYLIGHT),
+            "Pygments": (bench_pygments_python_highlight_string, HAS_PYGRAMENTS),
+        }
+    )
     
     # Lexer detection
-    results["Lexer detection (.rs)"] = run_comparison(
-        "Lexer detection",
-        max(500, iterations * 5),
-        syntect_fn="bench_syntect_syntax_detection",
-        pygments_fn="bench_pygments_lexer_detection"
+    det_iter = max(500, iterations * 5)
+    all_results["Lexer detection (.rs)"] = run_comparison(
+        "Lexer detection (.rs)", det_iter,
+        **{
+            "syntect-py (by ext)": (bench_syntect_detection, True),
+            "Pygments": (bench_pygments_lexer_detection, HAS_PYGRAMENTS),
+        }
     )
     
-    # CSS (syntect only)
-    print(f"\n--- CSS Generation (syntect only) ---")
-    t_css = timeit.timeit(
-        "bench_syntect_css(100)",
-        globals=globals(),
-        number=1
+    # CSS Generation
+    css_iter = max(10, iterations // 5)
+    all_results["CSS Generation"] = run_comparison(
+        "CSS Generation", css_iter,
+        **{
+            "syntect-py": (bench_syntect_css, True),
+            "fastpylight": (bench_fastpylight_css, HAS_FASTPYLIGHT),
+        }
     )
-    print(f"  syntect-py:    {t_css:8.3f}ms")
-    results["CSS Generation"] = {"syntect": t_css, "pygments": None, "speedup": None}
     
     # Summary
     print("\n" + "=" * 70)
     print("  Summary (fastest syntect time first)")
     print("=" * 70)
     
-    syntect_times = {k: v["syntect"] for k, v in results.items() if v["pygments"] is not None}
-    for name, time_ms in sorted(syntect_times.items(), key=lambda x: x[1]):
-        pyg = results[name]["pygments"]
-        speedup = results[name]["speedup"]
-        bar = "#" * int(time_ms / max(0.01, min(syntect_times.values())))
-        print(f"  {name:30s} {time_ms:8.3f}ms  Pygments:{pyg:8.3f}ms  {speedup:6.1f}x  {bar}")
+    for cat_name, cat_results in all_results.items():
+        print(f"\n  {cat_name}:")
+        min_t = min(v for v in cat_results.values() if v is not None)
+        for lib_name, t in sorted(cat_results.items(), key=lambda x: x[1] if x[1] is not None else float('inf')):
+            if t is None:
+                continue
+            relative = t / min_t if min_t > 0 else float('inf')
+            bar = "#" * int(relative * 2)
+            print(f"    {lib_name:30s} {t:8.3f}ms  ({relative:5.1f}x)  {bar}")
     
-    print(f"\n  Fastest syntect: {min(syntect_times, key=syntect_times.get)}")
-    print(f"  Slowest syntect: {max(syntect_times, key=syntect_times.get)}")
-    print("=" * 70 + "\n")
+    print(f"\n{'=' * 70}\n")
     
-    return results
+    return all_results
 
 
 if __name__ == "__main__":
     import argparse
-    
-    parser = argparse.ArgumentParser(description="Compare syntect-py vs Pygments")
+    parser = argparse.ArgumentParser(description="Compare syntect-py vs fastpylight vs Pygments")
     parser.add_argument("--iterations", type=int, default=100, help="Base iteration count")
     args = parser.parse_args()
-    
     run_all_comparisons(args.iterations)

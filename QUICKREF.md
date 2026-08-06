@@ -1,7 +1,9 @@
 # syntect-py Quick Reference
 
 > Python bindings for syntect — high-quality syntax highlighting using Sublime Text grammars.
-> PyO3 0.29 · Python ≥ 3.9 · regex-fancy (pure Rust)
+> syntect-py 5.3.0 · PyO3 0.29 · Python ≥ 3.9 · regex-fancy (pure Rust)
+>
+> Current parity coverage: P1–P4.5. The Assets API is available; expanded bat grammar data remains outstanding.
 
 ---
 
@@ -14,10 +16,15 @@ pip install syntect
 Or build from source:
 
 ```bash
-cd pyext
-maturin build
-pip install --force-reinstall target/wheels/*.whl
+# From the repository root
+python -m pip install maturin
+maturin build --release -m pyext/Cargo.toml
+python -m pip install --force-reinstall pyext/target/wheels/*.whl
 ```
+
+Release wheels are built by GitHub Actions for Linux x86_64/ARM64, macOS
+x86_64/ARM64, and Windows x86_64. A source distribution is also uploaded to
+PyPI when a `v*` tag is pushed.
 
 ---
 
@@ -63,6 +70,7 @@ repr(c)                                  # "Color(r=255, g=0, b=0, a=255)"
 
 ```python
 fs = syntect.FontStyle(3)                  # BOLD (1) | UNDERLINE (2)
+fs = syntect.FontStyle.from_string("bold italic underline")  # bits=7
 fs_bold = syntect.FontStyle.BOLD           # bits=1
 fs_italic = syntect.FontStyle.ITALIC       # bits=4
 fs_underline = syntect.FontStyle.UNDERLINE # bits=2
@@ -121,6 +129,8 @@ ss = syntect.SyntaxSet.from_dump("syntaxes.packdump")
 # Discovery
 ref = ss.find_syntax_by_name("Rust")
 ref = ss.find_syntax_by_extension("rs")
+ref = ss.find_syntax_by_token("rs")       # Language token/alias lookup
+ref = ss.find_syntax_by_first_line("#!/usr/bin/env node")
 ref = ss.find_syntax_by_scope("source.rust")
 ref = ss.find_syntax_for_file("main.rs")   # Returns None|SyntaxReference
 ref = ss.find_syntax_plain_text()          # Returns SyntaxReference
@@ -135,7 +145,7 @@ warnings = ss.warnings()                   # List[str]
 builder = ss.into_builder()                # SyntaxSetBuilder (clones ss)
 ss.to_dump("syntaxes.packdump")            # Save to dump file
 
-repr(ss)                                   # "SyntaxSet(syntaxes=192)"
+repr(ss)                                   # "SyntaxSet(syntaxes=N)"
 ```
 
 ### SyntaxReference
@@ -176,15 +186,19 @@ ts = syntect.ThemeSet.load_defaults()
 ts = syntect.ThemeSet.from_dump("themes.themedump")
 
 # Loading
-ts.add_from_folder("/path/to/themes")       # Returns List[str] (warnings)
-ts = syntect.ThemeSet.builder()             # Static: returns empty ThemeSet
+ts.add_from_folder("/path/to/themes")       # Returns loaded theme names
+theme = syntect.ThemeSet.load_theme_from_reader(plist_content)
+ts.add_theme("custom", theme)
+ts.add_theme_from_reader("custom-2", plist_content)
+ts = syntect.ThemeSet.builder()               # Static: returns empty ThemeSet
 
 # Access
 theme = ts.get_theme("base16-ocean.dark")   # Optional[Theme]
-names = ts.theme_names()                    # List[str]
+fallback = ts.get_theme("missing", "base16-ocean.dark")
+names = ts.theme_names()                      # List[str]
 ts.to_dump("themes.themedump")              # Save to dump file
 
-repr(ts)                                    # "ThemeSet(themes=10)"
+repr(ts)                                    # "ThemeSet(themes=N)"
 ```
 
 ### Theme
@@ -199,16 +213,21 @@ theme.scopes                                # List[ThemeItem]
 repr(theme)                                 # "Theme(name='...', author='...')"
 ```
 
-### ThemeSettings (29 properties)
+### ThemeSettings (31 readable properties)
 
 ```python
 settings = theme.settings
+settings = syntect.ThemeSettings()             # Construct an empty settings object
+settings.background = syntect.Color.from_hex("#1E1E1E")
+settings.foreground = syntect.Color.from_hex("#E0E0E0")
 # Colors (Optional[Color])
 settings.foreground
 settings.background
 settings.selection_background
 settings.gutter_foreground
 settings.gutter_background
+settings.gutter                              # Alias for gutter_background
+settings.selection                          # Alias for selection_background
 settings.caret
 settings.line_highlight
 settings.misspelling
@@ -241,20 +260,58 @@ settings.active_guide
 settings.stack_guide
 settings.shadow
 
-repr(settings)                              # "ThemeSettings(fg=..., bg=..., sel_bg=..., caret=...)"
+repr(settings)                              # "ThemeSettings(fg=..., bg=..., caret=...)"
+# Color/CSS fields can be assigned; underline option fields remain read-only.
 ```
+
+### ScopeSelectors
+
+```python
+selectors = syntect.ScopeSelectors.from_string("variable, constant")
+selectors.to_string()                       # "variable, constant"
+repr(selectors)                             # "ScopeSelectors('variable, constant')"
+```
+
+Selectors preserve comma/pipe unions, selector paths, and exclusions. They are
+used directly by CSS generation rather than reconstructed from whitespace.
 
 ### ThemeItem
 
 ```python
 item = theme.scopes[0]
-item.scope                                  # "source.rust"
+item.scope                                  # Display string, e.g. "source.rust"
+item.scope_selectors                        # ScopeSelectors object
 item.foreground                             # Optional[Color]
 item.background                             # Optional[Color]
 item.font_style                             # u8 (bitmask)
-item.style_modifier                         # str (e.g., "StyleModifier{...}")
-item.style                                  # StyleModifier (derived from fg/bg/fs)
-repr(item)                                  # "ThemeItem(scope='...', fg=..., bg=..., font=3)"
+item.style_modifier                         # StyleModifier
+item.style                                  # StyleModifier
+repr(item)                                  # "ThemeItem(scope='...', font=3)"
+
+# Construct a theme item
+item = syntect.ThemeItem(
+    syntect.ScopeSelectors.from_string("comment"),
+    syntect.StyleModifier(
+        foreground=syntect.Color.from_hex("#6A7A3E"),
+        font_style=syntect.FontStyle.from_string("italic"),
+    ),
+)
+```
+
+### Theme construction
+
+```python
+settings = syntect.ThemeSettings()
+settings.background = syntect.Color.from_hex("#1E1E1E")
+item = syntect.ThemeItem(
+    syntect.ScopeSelectors.from_string("keyword, storage"),
+    syntect.StyleModifier(foreground=syntect.Color.from_hex("#FF6B6B")),
+)
+theme = syntect.Theme(
+    name="My Theme", author="me", settings=settings, scopes=[item]
+)
+ts = syntect.ThemeSet()
+ts.add_theme("my-theme", theme)
 ```
 
 ### UnderlineOption
@@ -266,6 +323,50 @@ uo = syntect.UnderlineOption.squiggly_underline()
 uo = syntect.UnderlineOption.none_()         # Returns None
 repr(uo)                                     # "UnderlineOption(underline)"
 ```
+
+---
+
+## VS Code themes and bundled themes
+
+```python
+# Auto-detect and parse VS Code JSON or JSONC
+content = open("theme.json", encoding="utf-8").read()
+assert syntect.is_vscode_theme(content)
+theme = syntect.parse_vscode_theme(content)
+
+# Register in the process-wide convenience registry
+syntect.add_custom_theme("my-vscode-theme", content)
+print(syntect.list_themes())
+print(syntect.list_syntaxes())
+
+# Load all .tmTheme and .json files from a directory
+loaded = syntect.load_themes_from_folder("/path/to/themes")
+```
+
+The wheel includes 55 mordant themes under `syntect/themes/`, including
+`Dracula`, `Nord`, `Monokai Extended`, `OneDark`, and `Solarized (dark)`. They
+are registered automatically during import. The process-wide registry is
+separate from caller-created `ThemeSet` objects.
+
+## Assets compatibility API
+
+```python
+assets = syntect.Assets.from_binary()
+assets.set_fallback_theme("Monokai Extended")
+ss = assets.get_syntax_set()
+ts = assets.get_theme_set()
+theme = assets.get_theme("unknown-theme")  # Uses configured fallback
+names = assets.theme_names()
+
+# Alias and convenience constructor
+assets2 = syntect.HighlightingAssets.from_binary()
+assets3 = syntect.load_assets()
+```
+
+The API is compatible with the planned `syntect-assets` integration. The
+current implementation uses fork-compatible defaults and the bundled
+`Monokai Extended` fallback; the expanded bat grammar dataset is not yet
+included.
 
 ---
 
@@ -323,6 +424,10 @@ repr(hl)                                    # "Highlighter(syntax='Rust', theme=
 ```python
 hl = syntect.HighlightLines(rust, ss, ts, "base16-ocean.dark")
 # Constructor: (syntax_ref, syntax_set, theme_set, theme_name) — 4 args
+# Unknown theme names fall back to InspiredGitHub when available.
+
+# Direct Theme construction, without registering it in a ThemeSet:
+hl_direct = syntect.HighlightLines.with_theme(rust, ss, theme)
 
 tokens = hl.highlight_line("fn main() {}", ss)
 # Returns: List[Tuple[Style, str]] — 2 args (line, syntax_set)
@@ -690,7 +795,9 @@ if theme is None:
 | `save_state()` requires `ss, ts` arguments | Not no-arg: `hl.save_state(ss, ts)` |
 | `is_prefix_of()` semantics | `parent.is_prefix_of(child)` — parent checks if child starts with it |
 | `Color.to_hex()` returns uppercase | `#FF0000`, not `#ff0000` |
-| `get_theme()` returns `None` for missing | Does not raise exception |
+| `get_theme()` returns `None` for missing | Pass `fallback="theme-name"` for ThemeSet fallback lookup |
+| `HighlightLines` unknown theme | Falls back to `InspiredGitHub` when available |
+| `add_custom_theme()` registry | Process-wide registry; use `ThemeSet.add_theme()` for an isolated set |
 | `ClassedHTMLGenerator` constructor order | `(syntax_ref, syntax_set, class_style)` — order matters |
 | `tokens_to_classed_spans()` returns HTML string | Not a list of tuples |
 | `lines_with_endings()` returns iterator | Iterate with `for line, ending in syntect.lines_with_endings(content)` |
@@ -709,7 +816,8 @@ if theme is None:
 | `as_terminal_escaped(include_bg=True)` blends alpha | Foreground is alpha-blended with background before output |
 | `as_html("if_different")` needs `default_bg` | Without `default_bg`, all backgrounds are included |
 | `SyntaxSetBuilder.warnings()` vs `SyntaxSet.warnings()` | Builder warnings are from loading; SyntaxSet warnings are from linking |
-| `ThemeItem.style` returns `StyleModifier` | `ThemeItem.style_modifier` returns the string representation |
+| `ThemeItem.scope` is a display string | Use `ThemeItem.scope_selectors` for the parsed selector object |
+| `ThemeItem.style` and `.style_modifier` | Both return `StyleModifier` objects |
 | `Metadata` may be `None` | `load_defaults()` doesn't load `.tmPreferences` by default |
 | `PyClassStyle("spaced_prefixed")` has no prefix | Use `spaced_prefixed("custom-")` for custom prefix |
 | `IncludeBg("false")` maps to kind=0 | `IncludeBg("false")` is same as `IncludeBg("no")` |
@@ -722,7 +830,8 @@ if theme is None:
 |---|---|---|
 | Core | `Color`, `FontStyle`, `Style`, `StyleModifier` | — |
 | Syntax | `SyntaxSet`, `SyntaxReference`, `SyntaxSetBuilder` | — |
-| Theme | `ThemeSet`, `Theme`, `ThemeSettings`, `ThemeItem`, `UnderlineOption` | — |
+| Theme | `ThemeSet`, `Theme`, `ThemeSettings`, `ThemeItem`, `ScopeSelectors`, `UnderlineOption` | `is_vscode_theme`, `is_plist_theme`, `parse_vscode_theme`, `add_custom_theme`, `load_themes_from_folder`, `list_themes`, `list_syntaxes` |
+| Assets | `Assets`, `HighlightingAssets` | `load_assets` |
 | Metadata | `Metadata`, `MetadataSet`, `MetadataItem` | — |
 | Highlighting | `Highlighter`, `HighlightState`, `HighlightLines`, `HighlightResult`, `ScoredStyle` | `highlight_string` |
 | Parsing | `ParseState`, `ParseLineOutput`, `Scope`, `ScopeStack`, `ScopeStackOp`, `MatchPower`, `ClearAmount`, `ContextId` | — |
@@ -733,4 +842,4 @@ if theme is None:
 
 ---
 
-*Generated: 2026-06-30 · 337 tests passing · Zero compiler warnings · All phases complete · CI configured · Arc-based lazy cloning · 70 golden output tests*
+*Updated: 2026-08-06 · syntect-py 5.3.0 · P1–P4.5 parity APIs implemented · 346 tests passing · PyPI wheel/sdist workflows configured · expanded bat grammar data remains outstanding.*

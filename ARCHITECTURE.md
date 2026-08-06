@@ -12,12 +12,15 @@
 ### Design Principles
 
 1. **Mirror syntect's module structure** — Each syntect module has a corresponding `pyext/src/*.rs` file.
-2. **Owned data where lifetimes are hard** — `PyClassedHTMLGenerator` and `PyHighlightLines` clone upstream types to own their data, avoiding borrow-lifetime issues across the FFI boundary.
+2. **Keep package data beside the extension** — The mixed Python/Rust package stores bundled themes in `pyext/syntect/themes/` and the Rust module loads them relative to the installed extension.
+3. **Owned data where lifetimes are hard** — `PyClassedHTMLGenerator` and `PyHighlightLines` clone upstream types to own their data, avoiding borrow-lifetime issues across the FFI boundary.
 3. **Properties, not methods, for simple accessors** — `MatchPower.value`, `ClearAmount.kind`, `ContextId.syntax_index` are `#[getter]` properties, not callable methods.
 4. **Conditional compilation for features** — Metadata types use `#[cfg(feature = "metadata")]` to compile only when the feature is enabled.
 5. **No module-level `#![allow(unused)]`** — All `#[allow(dead_code)]` and `#[allow(unused_assignments)]` are scoped to individual items.
 6. **Shared conversion helpers** — `converters.rs` centralizes Py↔Rust type conversions to avoid duplication.
 7. **String-based constructors for enums** — `ClassStyle("spaced")` and `IncludeBg("no")` accept string constructors in addition to static factory methods.
+8. **Pure-Rust regex for PyO3 thread safety** — The binding uses `regex-fancy`; Oniguruma-backed state is not `Send`/`Sync` and cannot be stored in normal PyO3 classes.
+9. **Best-effort optional theme loading** — Bundled theme failures do not prevent import; explicit directory loading remains strict and reports errors.
 
 ---
 
@@ -27,7 +30,9 @@
 |---|---|---|
 | `style.rs` | `syntect::highlighting::Color`, `FontStyle`, `Style`, `StyleModifier` | Core color/style types |
 | `syntax_set.rs` | `syntect::parsing::SyntaxSet`, `SyntaxReference` | Syntax loading, management, and discovery |
-| `theme_set.rs` | `syntect::highlighting::ThemeSet`, `Theme`, `ThemeSettings`, `ThemeItem`, `UnderlineOption` | Theme management and settings |
+| `theme_set.rs` | `syntect::highlighting::ThemeSet`, `Theme`, `ThemeSettings`, `ThemeItem`, `ScopeSelectors`, `UnderlineOption` | Theme management, authoring, and selector preservation |
+| `vscode_theme.rs` | VS Code JSON/JSONC themes | Format detection, conversion, custom-theme registry, bundled-theme loading |
+| `assets.rs` | `HighlightingAssets`-style compatibility API | Fork-compatible embedded defaults and fallback theme lookup |
 | `metadata.rs` | `syntect::parsing::Metadata`, `MetadataSet`, `MetadataItem` | `.tmPreferences` metadata (cfg: metadata) |
 | `highlighter.rs` | `syntect::easy::HighlightLines`, `HighlightState` | Stateful and stateless highlighting |
 | `highlighting.rs` | `syntect::highlighting::ScoredStyle` | Advanced highlighting internals |
@@ -58,6 +63,8 @@ lib.rs
 ├── dumps.rs          → errors.rs, syntax_set.rs, theme_set.rs
 ├── converters.rs     → style.rs
 ├── errors.rs         (no deps)
+├── vscode_theme.rs   → theme_set.rs, errors.rs
+├── assets.rs         → syntax_set.rs, theme_set.rs
 └── (all modules registered in lib.rs)
 ```
 
@@ -76,6 +83,8 @@ lib.rs
 │  hl = syntect.Highlighter(rust, theme)                              │
 │  tokens = hl.highlight_line("fn main() {}", ss, ts)                 │
 │  html = result.as_html("if_different", default_bg)                  │
+│  syntect.add_custom_theme("vscode", jsonc_content)                  │
+│  assets = syntect.Assets.from_binary()                               │
 └─────────────────────────────────────────────────────────────────────┘
                               │ PyO3 FFI
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -87,6 +96,8 @@ lib.rs
 │  PyTheme       ──► syntect::highlighting::Theme                     │
 │  PyHighlightState ──► syntect::highlighting::HighlightState         │
 │  PyClassedHTMLGenerator ──► syntect::html::ClassedHTMLGenerator     │
+│  PyScopeSelectors ──► syntect::highlighting::ScopeSelectors          │
+│  PyAssets ──► fork-compatible embedded SyntaxSet/ThemeSet           │
 │  PyScopeStack  ──► syntect::parsing::ScopeStack                     │
 │  PyScope       ──► syntect::parsing::Scope                          │
 │  PyScopeStackOp ──► syntect::parsing::ScopeStackOp                  │
@@ -154,7 +165,7 @@ pub struct PyClassedHTMLGenerator {
 
 Unlike `PyHighlighter` which creates a fresh highlighter per call, `PyHighlightLines` maintains the upstream `HighlightLines` stateful behavior. Its `highlight_line()` takes only `(line, syntax_set)` — 2 arguments — because the theme is baked in at construction.
 
-The constructor takes `(syntax_ref, theme_set, theme_name)` — 3 arguments — to resolve the theme from the theme set.
+The constructor takes `(syntax_ref, syntax_set, theme_set, theme_name)` — 4 arguments — to resolve the syntax and theme. Unknown themes fall back to `InspiredGitHub` when available. `HighlightLines.with_theme(syntax_ref, syntax_set, theme)` constructs directly from a theme object.
 
 ### 5.6 `PyHighlighter.from_state()` Limitation
 
@@ -187,14 +198,40 @@ pub struct PyTheme {
 
 pub struct PyThemeItem {
     scope: Arc<String>,
-    style_modifier: Arc<String>,
+    scope_selectors: PyScopeSelectors,
+    style: PyStyleModifier,
     // ...
 }
 ```
 
 All `find_syntax_by_*` and `syntaxes()` methods use a shared `syntax_ref_to_py()` helper. CSS generation improved from 0.049ms to 0.046ms/100lines. `highlight_string` improved from 128.9ms/100lines to 126.5ms/100lines.
 
-### 5.9 `HighlightResult` vs `Highlighter.highlight_line()`
+### 5.9 Theme authoring and selector preservation
+
+`PyScopeSelectors` stores the real syntect `ScopeSelectors` object instead of a lossy string. `PyThemeSettings`, `PyThemeItem`, and `PyTheme` expose constructors/setters so themes can be built from Python. CSS generation converts these objects directly, preserving comma-separated selectors, selector paths, exclusions, and combined font flags.
+
+### 5.10 VS Code themes and the process-wide registry
+
+`vscode_theme.rs` accepts plist XML or VS Code JSON/JSONC. `add_custom_theme()` writes to a process-wide registry used by `list_themes()`. Caller-owned `ThemeSet` instances remain independent and are modified with `add_theme()` or `add_theme_from_reader()`.
+
+### 5.11 Bundled themes and package layout
+
+Maturin builds a mixed Python/Rust package:
+
+```text
+syntect/
+├── __init__.py          # imports the Rust extension
+├── syntect.pyd/.so      # platform extension
+└── themes/              # 55 mordant themes
+```
+
+The extension searches for `themes/` next to itself and falls back to the source-tree package path during development. Invalid bundled files are skipped during import; explicit `load_themes_from_folder()` calls are strict.
+
+### 5.12 Assets compatibility boundary
+
+`Assets` and `HighlightingAssets` provide the planned API (`from_binary()`, fallback lookup, syntax/theme access), but the published `syntect-assets` binary dump is not wire-compatible with this fork's serialization. The current implementation uses the fork's default syntax/theme data and includes `Monokai Extended` as a fallback. Full bat grammar data remains a future vendoring/conversion task.
+
+### 5.13 `HighlightResult` vs `Highlighter.highlight_line()`
 
 `HighlightResult` is returned by `highlight_string()` — a high-level convenience function that highlights all lines at once. It provides `tokens`, `html`, and `terminal_escaped` properties plus `as_html()`, `as_terminal_escaped()`, and `as_latex_escaped()` methods.
 
@@ -224,8 +261,13 @@ All public functions use consistent error types:
 ```
 pyext/
 ├── Cargo.toml          # PyO3 + syntect dependencies (default-features = false)
-├── pyproject.toml      # maturin build configuration
+├── pyproject.toml      # maturin build configuration and theme inclusion
+├── README.md           # package metadata readme
 ├── syntect.pyi         # Type stubs (auto-generated + hand-maintained)
+├── syntect/            # mixed-package wrapper and bundled themes
+│   ├── __init__.py
+│   ├── __init__.pyi
+│   └── themes/         # 55 mordant .tmTheme/.json files
 ├── src/
 │   ├── lib.rs          # Module entry point, class/function registration
 │   ├── style.rs        # Color, FontStyle, Style, StyleModifier
@@ -243,10 +285,12 @@ pyext/
 │   ├── dumps.rs        # dump_syntax_set, load_syntax_set, dump_theme_set, load_theme_set
 │   ├── converters.rs   # syntect_style_to_py, syntect_color_to_py, syntect_font_style_to_py,
 │   │                     # py_color_to_syntect, py_font_style_to_syntect, py_style_to_syntect
-│   └── errors.rs       # LoadingError, ParsingError, DumpError, ParseSyntaxError,
-│                         # loading_error_to_string, dump_error_to_string
-├── examples/           # 9 example scripts
-├── tests/              # 337 tests across 15 test files (incl. 70 golden outputs)
+│   ├── errors.rs       # LoadingError, ParsingError, DumpError, ParseSyntaxError,
+│   │                     # loading_error_to_string, dump_error_to_string
+│   ├── vscode_theme.rs # VS Code JSON/JSONC conversion and theme registry
+│   └── assets.rs       # Assets/HighlightingAssets compatibility API
+├── examples/           # example scripts
+├── tests/              # Python, golden, stub-conformance, and mordant-parity tests
 └── mypy.ini            # mypy type checking configuration
 ```
 
@@ -267,7 +311,7 @@ pyext/
 
 | Rust Type | Python Class | Constructor | Key Methods/Properties |
 |---|---|---|---|
-| `syntect::parsing::SyntaxSet` | `syntect.SyntaxSet` | `SyntaxSet.new()` | `load_defaults()`, `load_from_folder()`, `from_dump()`, `builder()`, `into_builder()`, `warnings()`, `find_syntax_by_extension()`, `find_syntax_by_name()`, `find_syntax_by_scope()`, `find_syntax_for_file()`, `find_syntax_plain_text()`, `syntaxes()`, `to_dump()`, `find_unlinked_contexts()`, `metadata`, `__repr__` |
+| `syntect::parsing::SyntaxSet` | `syntect.SyntaxSet` | `SyntaxSet.new()` | `load_defaults()`, `load_from_folder()`, `from_dump()`, `builder()`, `into_builder()`, `warnings()`, `find_syntax_by_extension()`, `find_syntax_by_token()`, `find_syntax_by_first_line()`, `find_syntax_by_name()`, `find_syntax_by_scope()`, `find_syntax_for_file()`, `find_syntax_plain_text()`, `syntaxes()`, `to_dump()`, `find_unlinked_contexts()`, `metadata`, `__repr__` |
 | `syntect::parsing::SyntaxReference` | `syntect.SyntaxReference` | (opaque) | `name`, `scope`, `file_extensions`, `hidden`, `first_line_match`, `version`, `variables`, `__repr__` |
 | `syntect::parsing::SyntaxSetBuilder` | `syntect.SyntaxSetBuilder` | `SyntaxSetBuilder()` | `add_from_folder()`, `add_plain_text_syntax()`, `build()`, `warnings()`, `__repr__` |
 
@@ -275,11 +319,20 @@ pyext/
 
 | Rust Type | Python Class | Constructor | Key Methods/Properties |
 |---|---|---|---|
-| `syntect::highlighting::ThemeSet` | `syntect.ThemeSet` | `ThemeSet.new()` | `load_defaults()`, `from_dump()`, `builder()`, `add_from_folder()`, `get_theme()`, `theme_names()`, `to_dump()`, `__repr__` |
-| `syntect::highlighting::Theme` | `syntect.Theme` | (opaque) | `key`, `name`, `author`, `settings`, `scopes`, `__repr__` |
-| `syntect::highlighting::ThemeSettings` | `syntect.ThemeSettings` | (opaque) | 29 properties: `foreground`, `background`, `selection_background`, `gutter_foreground`, `gutter_background`, `caret`, `line_highlight`, `misspelling`, `minimap_border`, `accent`, `popup_css`, `phantom_css`, `bracket_contents_foreground`, `bracket_contents_options`, `brackets_foreground`, `brackets_background`, `brackets_options`, `tags_foreground`, `tags_options`, `highlight`, `find_highlight`, `find_highlight_foreground`, `selection_foreground`, `selection_border`, `inactive_selection`, `inactive_selection_foreground`, `guide`, `active_guide`, `stack_guide`, `shadow`, `__repr__` |
-| `syntect::highlighting::ThemeItem` | `syntect.ThemeItem` | (opaque) | `scope`, `foreground`, `background`, `font_style`, `style_modifier`, `style` (→ `StyleModifier`), `__repr__` |
+| `syntect::highlighting::ThemeSet` | `syntect.ThemeSet` | `ThemeSet.new()` | `load_defaults()`, `load_theme_from_reader()`, `from_dump()`, `builder()`, `add_from_folder()`, `add_theme()`, `add_theme_from_reader()`, `get_theme(key, fallback=None)`, `theme_names()`, `to_dump()`, `__repr__` |
+| `syntect::highlighting::Theme` | `syntect.Theme` | `Theme(name=None, author=None, settings=None, scopes=None)` | `key`, `name`, `author`, `settings`, `scopes`, `__repr__` |
+| `syntect::highlighting::ScopeSelectors` | `syntect.ScopeSelectors` | `ScopeSelectors.from_string(value)` | `to_string()`, `__repr__` |
+| `syntect::highlighting::ThemeSettings` | `syntect.ThemeSettings` | `ThemeSettings()` | 31 readable properties plus mutable color/CSS settings: `foreground`, `background`, `selection_background`/`selection`, `gutter_foreground`, `gutter_background`/`gutter`, `caret`, `line_highlight`, `misspelling`, `minimap_border`, `accent`, `popup_css`, `phantom_css`, `bracket_contents_foreground`, `brackets_foreground`, `brackets_background`, `tags_foreground`, `highlight`, `find_highlight`, `find_highlight_foreground`, `selection_foreground`, `selection_border`, `inactive_selection`, `inactive_selection_foreground`, `guide`, `active_guide`, `stack_guide`, `shadow`, `__repr__` |
+| `syntect::highlighting::ThemeItem` | `syntect.ThemeItem` | `ThemeItem(scope_selectors, style_modifier)` | `scope`, `scope_selectors`, `foreground`, `background`, `font_style`, `style_modifier`, `style` (→ `StyleModifier`), `__repr__` |
 | `syntect::highlighting::UnderlineOption` | `syntect.UnderlineOption` | (opaque) | `none_()`, `underline()`, `stippled_underline()`, `squiggly_underline()`, `__repr__` |
+
+### Asset Types
+
+| Rust/compatibility Type | Python Class | Constructor | Key Methods/Properties |
+|---|---|---|---|
+| Fork-compatible embedded assets | `syntect.Assets` / `syntect.HighlightingAssets` | `Assets.from_binary()` | `set_fallback_theme()`, `get_syntax_set()`, `get_theme()`, `get_theme_set()`, `theme_names()` |
+
+The asset API intentionally matches the planned `syntect-assets` surface, but currently uses the fork-compatible default dumps plus `Monokai Extended`. The expanded bat grammar data is not yet vendored.
 
 ### Metadata Types
 
@@ -295,7 +348,7 @@ pyext/
 |---|---|---|---|
 | `syntect::easy::HighlightLines` | `syntect.Highlighter` | `Highlighter(syntax_ref, theme)` | `highlight_line(line, ss, ts)`, `highlight_lines(code, ss, ts)`, `highlight_file(path, ss, ts)`, `save_state(ss, ts)`, `from_state(state, theme)`, `__repr__` |
 | `syntect::highlighting::HighlightState` | `syntect.HighlightState` | `HighlightState()` | `path_scope_stack`, `styles_stack`, `path_scope_string`, `styles_count`, `__repr__` |
-| `syntect::easy::HighlightLines` | `syntect.HighlightLines` | `HighlightLines(syntax_ref, theme_set, theme_name)` | `highlight_line(line, ss)`, `highlight_lines(code, ss, ts)`, `__repr__` |
+| `syntect::easy::HighlightLines` | `syntect.HighlightLines` | `HighlightLines(syntax_ref, syntax_set, theme_set, theme_name)` | `with_theme(syntax_ref, syntax_set, theme)`, `highlight_line(line, ss)`, fallback to `InspiredGitHub`, `__repr__` |
 | `syntect::easy::HighlightResult` | `syntect.HighlightResult` | (opaque) | `tokens`, `html`, `terminal_escaped`, `as_html()`, `as_terminal_escaped()`, `as_latex_escaped()`, `__repr__` |
 | `syntect::highlighting::ScoredStyle` | `syntect.ScoredStyle` | `ScoredStyle(fg_r,fg_g,fg_b,fg_a,fg_score, bg_r,bg_g,bg_b,bg_a,bg_score, fs, fs_score)` | All color components + scores as properties, `__repr__` |
 
@@ -346,6 +399,13 @@ pyext/
 | `dump_theme_set` | `dumps` | `(ts, path)` | `None` |
 | `load_theme_set` | `dumps` | `(path)` | `ThemeSet` |
 | `highlight_string` | `highlighter` | `(code, syntax_name, theme_name, ss, ts)` | `HighlightResult` |
+| `is_vscode_theme` | `vscode_theme` | `(content)` | `bool` |
+| `is_plist_theme` | `vscode_theme` | `(content)` | `bool` |
+| `parse_vscode_theme` | `vscode_theme` | `(content)` | `Theme` |
+| `add_custom_theme` | `vscode_theme` | `(name, content)` | `None` |
+| `load_themes_from_folder` | `vscode_theme` | `(path)` | `List[str]` |
+| `list_themes` / `list_syntaxes` | `vscode_theme` | `()` | `List[str]` |
+| `load_assets` | `assets` | `()` | `Assets` |
 
 ---
 
@@ -381,4 +441,4 @@ Combine with `|`: `FontStyle.BOLD | FontStyle.ITALIC` → bits = 5
 
 ---
 
-*Generated: 2026-06-30 · 337 tests passing · Zero compiler warnings · All phases complete · CI configured · Arc-based lazy cloning · 70 golden output tests*
+*Updated: 2026-08-06 · syntect-py 5.3.0 · P1–P4.5 parity APIs implemented · 346 tests passing · PyPI wheel/sdist workflows configured · expanded bat grammar data remains outstanding.*

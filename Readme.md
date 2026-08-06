@@ -1,9 +1,9 @@
 # syntect-py
 
 > High-quality syntax highlighting for Python using Sublime Text grammars, powered by the [syntect](https://github.com/trishume/syntect) Rust crate.
-> PyO3 0.29 · Python ≥ 3.9 · Pure Rust regex (no C dependencies)
+> syntect-py 5.3.0 · PyO3 0.29 · Python ≥ 3.9 · Pure Rust regex (no C dependencies)
 
-[![Tests](https://img.shields.io/badge/tests-337_passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-346_passing-brightgreen)]()
 [![Python](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)]()
 [![PyO3](https://img.shields.io/badge/pyo3-0.29-orange)]()
 
@@ -11,8 +11,12 @@
 
 ## Features
 
-- **192+ syntaxes** — Rust, Python, JavaScript, TypeScript, Go, C, C++, Java, HTML, CSS, YAML, TOML, Markdown, and more (all from Sublime Text packages)
-- **10+ themes** — base16-ocean.dark, Solarized Light, InspiredGithub, and more
+- **190+ built-in syntaxes** — Rust, Python, JavaScript, TypeScript, Go, C, C++, Java, HTML, CSS, YAML, TOML, Markdown, and more
+- **55 bundled mordant themes** — Dracula, Nord, Monokai Extended, OneDark, Solarized, and more, loaded automatically
+- **Syntax lookup primitives** — token/alias lookup and first-line detection for shebangs, modelines, and XML
+- **Theme authoring** — construct themes with `ThemeSettings`, `ThemeItem`, `ScopeSelectors`, and `StyleModifier`
+- **VS Code theme support** — parse JSON/JSONC themes and register custom plist/VS Code themes
+- **Assets compatibility API** — `Assets`/`HighlightingAssets` fallback API for future expanded grammar data
 - **Multiple output formats** — inline HTML, class-based HTML, ANSI terminal escapes (24-bit color), LaTeX
 - **Stateful highlighting** — incremental re-highlighting with save/restore for editor integration
 - **Real parse state** — context-sensitive parsing across lines with scope stack introspection
@@ -20,7 +24,7 @@
 - **Serialization** — dump/load syntax sets and themes as binary `.packdump`/`.themedump` files
 - **Zero C dependencies** — uses `regex-fancy` (pure Rust), no Oniguruma
 - **Full type stubs** — comprehensive `.pyi` stubs for IDE autocomplete and type checking
-- **337 tests** — covering all 29 implementation phases (Phases 11–29) plus 70 golden output tests
+- **346 tests** — covering syntax/theme parity, JSONC themes, CSS selectors, bundled themes, assets fallback, stub conformance, and golden outputs
 
 ---
 
@@ -33,10 +37,15 @@ pip install syntect
 ### From source
 
 ```bash
-cd pyext
-maturin build
-pip install --force-reinstall target/wheels/*.whl
+# From the repository root
+python -m pip install maturin
+maturin build --release --out pyext/dist -m pyext/Cargo.toml
+python -m pip install --force-reinstall pyext/dist/*.whl
 ```
+
+Prebuilt wheels are published for Linux x86_64/ARM64, macOS x86_64/ARM64,
+and Windows x86_64. Source distributions are also published to PyPI from
+`v*` Git tags.
 
 ---
 
@@ -89,9 +98,12 @@ state = hl.save_state(ss, ts)  # Save highlighting state
 hl2 = syntect.Highlighter.from_state(state, theme)  # Resume from state
 
 # Or use the stateful HighlightLines API (upstream behavior)
-hl_lines = syntect.HighlightLines(rust, ts, "base16-ocean.dark")
+hl_lines = syntect.HighlightLines(rust, ss, ts, "base16-ocean.dark")
 for line in code.split("\n"):
     tokens = hl_lines.highlight_line(line, ss)  # 2 args: (line, ss)
+
+# Or construct directly from a Theme object:
+hl_direct = syntect.HighlightLines.with_theme(rust, ss, theme)
 ```
 
 ---
@@ -143,7 +155,53 @@ cs = syntect.ClassStyle.spaced_prefixed("syn-")
 css = syntect.css_for_theme_class(theme, cs)
 ```
 
+CSS generation preserves comma-separated selectors and emits combined font
+styles such as bold + italic + underline.
+
 ---
+
+## Theme Authoring and VS Code Themes
+
+```python
+settings = syntect.ThemeSettings()
+settings.background = syntect.Color.from_hex("#1E1E1E")
+
+item = syntect.ThemeItem(
+    syntect.ScopeSelectors.from_string("variable, constant"),
+    syntect.StyleModifier(
+        foreground=syntect.Color.from_hex("#FFD700"),
+        font_style=syntect.FontStyle.from_string("bold italic underline"),
+    ),
+)
+theme = syntect.Theme(
+    name="Custom Theme", author="me", settings=settings, scopes=[item]
+)
+
+ts = syntect.ThemeSet()
+ts.add_theme("custom", theme)
+
+# VS Code JSON/JSONC or plist XML
+content = open("theme.json", encoding="utf-8").read()
+syntect.add_custom_theme("vscode-theme", content)
+print(syntect.list_themes())
+```
+
+The process-wide `add_custom_theme()` registry is separate from caller-owned
+`ThemeSet` instances. Use `ThemeSet.add_theme()` for an isolated set.
+
+## Assets Compatibility API
+
+```python
+assets = syntect.Assets.from_binary()
+assets.set_fallback_theme("Monokai Extended")
+asset_syntaxes = assets.get_syntax_set()
+asset_themes = assets.get_theme_set()
+theme = assets.get_theme("unknown-theme")  # configured fallback
+```
+
+The API is ready for expanded bat grammar data. The current implementation
+uses fork-compatible default syntax/theme data because the published
+`syntect-assets` binary dump is not compatible with this fork's serialization.
 
 ## Terminal Output (24-bit color)
 
@@ -245,8 +303,10 @@ except (syntect.LoadingError, OSError) as e:
     print(f"Load error: {e}")
 
 theme = ts.get_theme("nonexistent")
-if theme is None:  # Returns None, does not raise
+if theme is None:  # Returns None when no fallback is supplied
     print("Theme not found")
+
+fallback = ts.get_theme("nonexistent", "base16-ocean.dark")
 ```
 
 **Exception types:** `LoadingError`, `ParsingError`, `DumpError`, `ParseSyntaxError`, `ValueError`, `OSError`, `RuntimeError`, `IndexError`
@@ -262,7 +322,9 @@ if theme is None:  # Returns None, does not raise
 | `rust.variables` is `List[Tuple[str, str]]` | Not a `Dict[str, str]` |
 | `MatchPower.value` is a property | Not a method: use `mp.value`, not `mp.value()` |
 | `save_state()` requires `ss, ts` arguments | Not no-arg: `hl.save_state(ss, ts)` |
-| `get_theme()` returns `None` for missing | Does not raise exception |
+| `get_theme()` returns `None` for missing | Pass `fallback="theme-name"` for fallback lookup |
+| `HighlightLines` unknown theme | Falls back to `InspiredGitHub` when available |
+| `add_custom_theme()` registry | Process-wide; use `ThemeSet.add_theme()` for an isolated set |
 | `Color.to_hex()` returns uppercase | `#FF0000`, not `#ff0000` |
 | `is_prefix_of()` semantics | `parent.is_prefix_of(child)` — parent checks if child starts with it |
 
@@ -277,16 +339,24 @@ syntect-py/
 ├── CHANGELOG.md          # Version history
 ├── DESIGN.md             # Design decisions
 ├── Readme.md             # This file
-├── .github/workflows/ci.yml  # CI/CD pipeline
+├── .github/workflows/CI.yml      # Multiplatform CI
+├── .github/workflows/Release.yml # Wheel/sdist build and PyPI publish
 ├── pyext/
 │   ├── Cargo.toml        # PyO3 + syntect dependencies
-│   ├── pyproject.toml    # maturin build configuration
+│   ├── pyproject.toml    # maturin build configuration and theme inclusion
+│   ├── README.md         # Python package metadata readme
 │   ├── syntect.pyi       # Type stubs (complete)
+│   ├── syntect/
+│   │   ├── __init__.py   # Mixed-package wrapper
+│   │   ├── __init__.pyi
+│   │   └── themes/       # 55 bundled mordant themes
 │   ├── src/
 │   │   ├── lib.rs        # Module entry point
 │   │   ├── style.rs      # Color, FontStyle, Style, StyleModifier
 │   │   ├── syntax_set.rs # SyntaxSet, SyntaxReference, SyntaxSetBuilder
-│   │   ├── theme_set.rs  # ThemeSet, Theme, ThemeSettings, ThemeItem
+│   │   ├── theme_set.rs  # ThemeSet, Theme, ThemeSettings, ThemeItem, ScopeSelectors
+│   │   ├── vscode_theme.rs# VS Code JSON/JSONC conversion and registry
+│   │   ├── assets.rs      # Assets/HighlightingAssets compatibility API
 │   │   ├── metadata.rs   # Metadata, MetadataSet, MetadataItem
 │   │   ├── highlighter.rs# Highlighter, HighlightState, HighlightLines
 │   │   ├── highlighting.rs# ScoredStyle, ScopeRangeIterator
@@ -299,7 +369,7 @@ syntect-py/
 │   │   └── errors.rs     # Exception types
 │   ├── examples/         # 9 example scripts
 │   ├── benches/          # Benchmark scripts (highlighting, loading, parsing)
-│   └── tests/            # 337 tests (15 test files + golden outputs)
+│   └── tests/            # Python, parity, stub, and golden-output tests
 ```
 
 ---
@@ -318,11 +388,10 @@ syntect-py/
 | `metadata_example.py` | Metadata access from `.tmPreferences` |
 | `error_handling.py` | Error handling patterns |
 
-Run any example:
+Run any example from the repository root after installing the wheel:
 
 ```bash
-cd pyext
-python examples/basic_highlight.py
+python pyext/examples/basic_highlight.py
 ```
 
 ---
@@ -341,11 +410,12 @@ python examples/basic_highlight.py
 ## Tests
 
 ```bash
-cd pyext
-python -m pytest tests/ -v
+python -m pytest pyext/tests/ -v
 ```
 
-337 tests passing (267 original + 70 golden output tests). Includes stub conformance, LaTeX escaping, HTML/terminal output, CSS generation, and performance benchmarks.
+346 tests passing. The suite includes stub conformance, JSONC theme conversion,
+CSS selector preservation, bundled-theme loading, assets fallback, LaTeX
+escaping, HTML/terminal output, and golden outputs.
 
 ---
 
@@ -353,11 +423,12 @@ python -m pytest tests/ -v
 
 `syntect-py` is a Python binding layer over the [syntect](https://github.com/trishume/syntect) Rust crate, which provides:
 
-- 192+ syntax definitions from [Sublime Text Packages](https://github.com/sublimehq/Packages)
-- 10+ themes from the [base16](https://github.com/chrisk/base16) collection
+- 190+ built-in syntax definitions from [Sublime Text Packages](https://github.com/sublimehq/Packages)
+- 55 bundled mordant themes plus syntect's built-in themes
+- JSON/JSONC VS Code theme conversion and custom theme registration
 - Pure Rust `fancy-regex` engine (no C dependencies)
 - 24-bit color ANSI terminal output, HTML, and LaTeX support
 
 ---
 
-*All 337 tests passing · Zero compiler warnings · PyO3 0.29 · Python ≥ 3.9 · All phases complete · CI configured*
+*346 tests passing · syntect-py 5.3.0 · PyO3 0.29 · Python ≥ 3.9 · P1–P4.5 parity implemented · PyPI CI/release configured · expanded bat grammar data remains outstanding*

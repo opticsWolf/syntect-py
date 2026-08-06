@@ -147,49 +147,10 @@ pub fn css_for_theme(theme: &PyTheme, class_style: &str) -> PyResult<String> {
         _ => SyntectClassStyle::SpacedPrefixed { prefix: "syn-" },
     };
 
-    // Build real syntect theme scopes from PyTheme data
-    let scopes: Vec<syntect::highlighting::ThemeItem> = theme.scopes().iter().map(|item| {
-        let mut style = syntect::highlighting::StyleModifier::default();
-
-        if let Some(fg) = item.foreground() {
-            style.foreground = Some(syntect::highlighting::Color {
-                r: fg.r(), g: fg.g(), b: fg.b(), a: fg.a(),
-            });
-        }
-
-        if let Some(bg) = item.background() {
-            style.background = Some(syntect::highlighting::Color {
-                r: bg.r(), g: bg.g(), b: bg.b(), a: bg.a(),
-            });
-        }
-
-        let fs = item.font_style();
-        if fs & 1 != 0 {
-            style.font_style = Some(syntect::highlighting::FontStyle::BOLD);
-        } else if fs & 2 != 0 {
-            style.font_style = Some(syntect::highlighting::FontStyle::UNDERLINE);
-        } else if fs & 4 != 0 {
-            style.font_style = Some(syntect::highlighting::FontStyle::ITALIC);
-        }
-
-        // Parse scope string to extract scope atoms
-        let scope_str = item.scope();
-        let scope_selectors = scope_string_to_selectors(&scope_str);
-
-        syntect::highlighting::ThemeItem {
-            scope: scope_selectors,
-            style,
-        }
-    }).collect();
-
-    let real_theme = syntect::highlighting::Theme {
-        name: Some(theme.name().clone()),
-        author: Some(theme.author().clone()),
-        settings: syntect::highlighting::ThemeSettings::default(),
-        scopes,
-    };
-
-    css_for_theme_with_class_style(&real_theme, syntect_style)
+    // Use the parsed ScopeSelectors retained by PyThemeItem. This preserves
+    // unions (comma/pipe), selector paths, and exclusions instead of trying
+    // to reconstruct selectors by splitting a display string.
+    css_for_theme_with_class_style(&theme.to_syntect(), syntect_style)
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("CSS generation failed: {}", e)))
 }
 
@@ -205,47 +166,7 @@ pub fn css_for_theme(theme: &PyTheme, class_style: &str) -> PyResult<String> {
 pub fn css_for_theme_class(theme: &PyTheme, class_style: &PyClassStyle) -> PyResult<String> {
     let syntect_style = py_class_style_to_syntect(class_style);
 
-    // Build real syntect theme scopes from PyTheme data
-    let scopes: Vec<syntect::highlighting::ThemeItem> = theme.scopes().iter().map(|item| {
-        let mut style = syntect::highlighting::StyleModifier::default();
-
-        if let Some(fg) = item.foreground() {
-            style.foreground = Some(syntect::highlighting::Color {
-                r: fg.r(), g: fg.g(), b: fg.b(), a: fg.a(),
-            });
-        }
-
-        if let Some(bg) = item.background() {
-            style.background = Some(syntect::highlighting::Color {
-                r: bg.r(), g: bg.g(), b: bg.b(), a: bg.a(),
-            });
-        }
-
-        let fs = item.font_style();
-        if fs & 1 != 0 {
-            style.font_style = Some(syntect::highlighting::FontStyle::BOLD);
-        } else if fs & 2 != 0 {
-            style.font_style = Some(syntect::highlighting::FontStyle::UNDERLINE);
-        } else if fs & 4 != 0 {
-            style.font_style = Some(syntect::highlighting::FontStyle::ITALIC);
-        }
-
-        let scope_selectors = scope_string_to_selectors(&item.scope());
-
-        syntect::highlighting::ThemeItem {
-            scope: scope_selectors,
-            style,
-        }
-    }).collect();
-
-    let real_theme = syntect::highlighting::Theme {
-        name: Some(theme.name().clone()),
-        author: Some(theme.author().clone()),
-        settings: syntect::highlighting::ThemeSettings::default(),
-        scopes,
-    };
-
-    css_for_theme_with_class_style(&real_theme, syntect_style)
+    css_for_theme_with_class_style(&theme.to_syntect(), syntect_style)
         .map_err(|e| PyErr::new::<PyValueError, _>(format!("CSS generation failed: {}", e)))
 }
 
@@ -423,30 +344,6 @@ pub fn highlighted_html_at_line_and_column_number(
 
     html.push_str("</pre>\n");
     Ok(html)
-}
-
-
-// ============================================================================
-// Helper: Parse scope selectors from scope string
-// ============================================================================
-
-/// Parse a scope string (e.g., "source.rust keyword.declaration") into ScopeSelectors.
-/// Each whitespace-separated atom becomes a separate scope in the selector path.
-fn scope_string_to_selectors(scope_str: &str) -> syntect::highlighting::ScopeSelectors {
-    let parts: Vec<&str> = scope_str.split_whitespace().collect();
-    let scopes: Vec<syntect::parsing::Scope> = parts
-        .iter()
-        .filter_map(|s| syntect::parsing::Scope::new(s.trim()).ok())
-        .collect();
-    
-    syntect::highlighting::ScopeSelectors {
-        selectors: scopes.into_iter().map(|s| {
-            syntect::highlighting::ScopeSelector {
-                path: syntect::parsing::ScopeStack::from_vec(vec![s]),
-                excludes: Vec::new(),
-            }
-        }).collect(),
-    }
 }
 
 

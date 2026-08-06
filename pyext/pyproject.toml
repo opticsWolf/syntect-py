@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "syntect"
 version = "5.3.0"
 description = "High-quality syntax highlighting for Python using Sublime Text grammars"
-readme = "../README.md"
+readme = "README.md"
 license = "MIT"
 authors = [
     { name = "syntect-py contributors", email = "contributors@syntect-py.dev" },
@@ -48,6 +48,7 @@ Changelog = "https://github.com/syntect-py/syntect-py/blob/main/CHANGELOG.md"
 
 [tool.maturin]
 features = ["pyo3/extension-module", "metadata"]
+include = ["syntect/themes/*"]
 
 [tool.maturin.debug]
 rustflags = []

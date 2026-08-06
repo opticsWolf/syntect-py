@@ -64,11 +64,11 @@ class TestHighlightLines:
             assert s1.foreground.b == s2.foreground.b
             assert t1 == t2
 
-    def test_highlight_lines_error_handling(self, ss, ts):
-        """Test error handling for non-existent theme."""
+    def test_highlight_lines_unknown_theme_falls_back(self, ss, ts):
+        """Unknown themes use InspiredGitHub, matching mordant."""
         rust = ss.find_syntax_by_name("Rust")
-        with pytest.raises(ValueError):
-            syntect.HighlightLines(rust, ss, ts, "NonExistentTheme")
+        highlighter = syntect.HighlightLines(rust, ss, ts, "NonExistentTheme")
+        assert highlighter.highlight_line("fn main()", ss)
 
 
 @pytest.fixture

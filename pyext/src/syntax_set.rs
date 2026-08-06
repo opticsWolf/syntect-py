@@ -258,6 +258,19 @@ impl PySyntaxSet {
         self.inner.find_syntax_by_extension(ext).map(syntax_ref_to_py)
     }
 
+    /// Find a syntax by a language token, such as `py`, `python`, or `rs`.
+    pub fn find_syntax_by_token(&self, token: &str) -> Option<PySyntaxReference> {
+        self.inner.find_syntax_by_token(token).map(syntax_ref_to_py)
+    }
+
+    /// Find a syntax whose first-line matcher matches `line`.
+    ///
+    /// This supports shebangs, editor modelines, XML declarations, and other
+    /// syntax definitions that use `first_line_match`.
+    pub fn find_syntax_by_first_line(&self, line: &str) -> Option<PySyntaxReference> {
+        self.inner.find_syntax_by_first_line(line).map(syntax_ref_to_py)
+    }
+
     pub fn find_syntax_by_name(&self, name: &str) -> Option<PySyntaxReference> {
         self.inner.find_syntax_by_name(name).map(syntax_ref_to_py)
     }

@@ -90,6 +90,24 @@ impl PyFontStyle {
         PyFontStyle { bits }
     }
 
+    /// Parse a comma- or whitespace-separated list of style names.
+    ///
+    /// Unknown names are ignored, matching TextMate/VS Code theme behavior.
+    /// Returns `None` when no known style was present.
+    #[staticmethod]
+    pub fn from_string(value: &str) -> Option<PyFontStyle> {
+        let mut bits = 0u8;
+        for part in value.split(|c: char| c == ',' || c.is_whitespace()) {
+            match part.trim().to_ascii_lowercase().as_str() {
+                "bold" => bits |= 1,
+                "underline" | "underlined" => bits |= 2,
+                "italic" => bits |= 4,
+                _ => {}
+            }
+        }
+        (bits != 0).then_some(PyFontStyle { bits })
+    }
+
     #[classattr]
     pub const BOLD: PyFontStyle = PyFontStyle { bits: 1 };
     #[classattr]

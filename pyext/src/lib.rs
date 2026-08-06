@@ -5,6 +5,7 @@
 
 use pyo3::prelude::*;
 
+mod assets;
 mod converters;
 mod convenience;
 mod dumps;
@@ -18,6 +19,7 @@ mod style;
 mod syntax_set;
 mod theme_set;
 mod util;
+mod vscode_theme;
 
 /// High-quality syntax highlighting using Sublime Text grammars.
 ///
@@ -41,6 +43,21 @@ mod util;
 fn syntect(m: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = m.py();
 
+    // Load the vendored theme collection when it is available. In a wheel the
+    // data is next to the extension; during a source checkout the fallback is
+    // the pyext/syntect/themes directory captured by CARGO_MANIFEST_DIR. Loading is
+    // best-effort so a missing optional data directory never breaks import.
+    let mut theme_dirs = Vec::new();
+    if let Ok(module_file) = m.getattr("__file__").and_then(|value| value.extract::<String>()) {
+        if let Some(parent) = std::path::Path::new(&module_file).parent() {
+            theme_dirs.push(parent.join("themes"));
+        }
+    }
+    theme_dirs.push(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("syntect").join("themes"));
+    if let Some(theme_dir) = theme_dirs.into_iter().find(|path| path.is_dir()) {
+        vscode_theme::load_bundled_themes(&theme_dir);
+    }
+
     // Error types - register as module-level exception classes
     m.add("LoadingError", py.get_type::<errors::LoadingError>())?;
     m.add("ParsingError", py.get_type::<errors::ParsingError>())?;
@@ -58,11 +75,17 @@ fn syntect(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<syntax_set::PySyntaxReference>()?;
     m.add_class::<syntax_set::PySyntaxSetBuilder>()?;
 
+    // Assets (bat/syntect-assets compatible)
+    m.add_class::<assets::PyAssets>()?;
+    m.add("HighlightingAssets", py.get_type::<assets::PyAssets>())?;
+    m.add_function(wrap_pyfunction!(assets::load_assets, m)?)?;
+
     // Theme management
     m.add_class::<theme_set::PyThemeSet>()?;
     m.add_class::<theme_set::PyTheme>()?;
     m.add_class::<theme_set::PyThemeSettings>()?;
     m.add_class::<theme_set::PyThemeItem>()?;
+    m.add_class::<theme_set::PyScopeSelectors>()?;
     m.add_class::<theme_set::PyUnderlineOption>()?;
 
     // Metadata (tmPreferences)
@@ -116,6 +139,15 @@ fn syntect(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(dumps::load_syntax_set, m)?)?;
     m.add_function(wrap_pyfunction!(dumps::dump_theme_set, m)?)?;
     m.add_function(wrap_pyfunction!(dumps::load_theme_set, m)?)?;
+
+    // VS Code/JSONC theme conversion and process-wide convenience registry
+    m.add_function(wrap_pyfunction!(vscode_theme::is_vscode_theme, m)?)?;
+    m.add_function(wrap_pyfunction!(vscode_theme::is_plist_theme, m)?)?;
+    m.add_function(wrap_pyfunction!(vscode_theme::parse_vscode_theme, m)?)?;
+    m.add_function(wrap_pyfunction!(vscode_theme::add_custom_theme, m)?)?;
+    m.add_function(wrap_pyfunction!(vscode_theme::load_themes_from_folder, m)?)?;
+    m.add_function(wrap_pyfunction!(vscode_theme::list_themes, m)?)?;
+    m.add_function(wrap_pyfunction!(vscode_theme::list_syntaxes, m)?)?;
 
     // High-level convenience
     m.add_function(wrap_pyfunction!(highlighter::highlight_string, m)?)?;

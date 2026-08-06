@@ -131,13 +131,11 @@ class TestErrorMessages:
         # Should mention available syntaxes
         assert "available" in error_msg.lower() or "syntaxes" in error_msg.lower()
 
-    def test_invalid_theme_error_message(self, ss, ts):
-        """Test that invalid theme error includes available themes."""
+    def test_unknown_theme_uses_inspired_github_fallback(self, ss, ts):
+        """Unknown themes follow mordant's forgiving fallback behavior."""
         rust = ss.find_syntax_by_name("Rust")
-        with pytest.raises(ValueError) as exc_info:
-            syntect.HighlightLines(rust, ss, ts, "NonExistentTheme")
-        error_msg = str(exc_info.value)
-        assert "not found" in error_msg.lower()
+        highlighter = syntect.HighlightLines(rust, ss, ts, "NonExistentTheme")
+        assert highlighter.highlight_line("fn main()", ss)
 
     def test_highlight_lines_invalid_syntax(self, ss, ts):
         """Test Highlighter with valid syntax/theme works."""

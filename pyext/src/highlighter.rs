@@ -214,7 +214,11 @@ impl PyHighlightLines {
                 format!("Syntax not found: {}", syntax_ref.name)
             ))?;
 
+        // Keep the historical constructor compatible while matching mordant's
+        // forgiving theme lookup: InspiredGitHub is used when the requested
+        // theme is absent and the fallback itself is available.
         let real_theme = theme_set.inner.themes.get(theme_name)
+            .or_else(|| theme_set.inner.themes.get("InspiredGitHub"))
             .ok_or_else(|| PyErr::new::<PyValueError, _>(
                 format!("Theme not found: {}", theme_name)
             ))?;
@@ -225,8 +229,28 @@ impl PyHighlightLines {
         let theme_leaked = Box::leak(Box::new(real_theme.clone()));
         let highlighter = HighlightLines::new(syntax_leaked, theme_leaked);
 
-        Ok(PyHighlightLines {
-            highlighter,
+        Ok(PyHighlightLines { highlighter })
+    }
+
+    /// Construct a stateful highlighter directly from a Theme object.
+    ///
+    /// This is the Python equivalent of syntect's
+    /// `HighlightLines::new(syntax, theme)` API and avoids requiring the
+    /// caller to register the theme in a ThemeSet first.
+    #[staticmethod]
+    pub fn with_theme(
+        syntax_ref: &PySyntaxReference,
+        syntax_set: &PySyntaxSet,
+        theme: &PyTheme,
+    ) -> PyResult<Self> {
+        let syntax = syntax_set.inner.find_syntax_by_name(&syntax_ref.name)
+            .ok_or_else(|| PyErr::new::<PyValueError, _>(
+                format!("Syntax not found: {}", syntax_ref.name)
+            ))?;
+        let syntax_leaked = Box::leak(Box::new(syntax.clone()));
+        let theme_leaked = Box::leak(Box::new(theme.to_syntect()));
+        Ok(Self {
+            highlighter: HighlightLines::new(syntax_leaked, theme_leaked),
         })
     }
 
@@ -608,10 +632,11 @@ pub fn highlight_string(
         })?;
 
     let theme = theme_set.inner.themes.get(theme_name)
+        .or_else(|| theme_set.inner.themes.get("InspiredGitHub"))
         .ok_or_else(|| {
             let available: Vec<String> = theme_set.inner.themes.keys().cloned().collect();
             PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                format!("Theme '{}' not found. Available themes: {}", 
+                format!("Theme '{}' not found and no InspiredGitHub fallback is available. Available themes: {}",
                     theme_name, available.join(", "))
             )
         })?;

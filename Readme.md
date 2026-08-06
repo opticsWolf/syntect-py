@@ -12,7 +12,7 @@
 ## Features
 
 - **190+ built-in syntaxes** — Rust, Python, JavaScript, TypeScript, Go, C, C++, Java, HTML, CSS, YAML, TOML, Markdown, and more
-- **55 bundled mordant themes** — Dracula, Nord, Monokai Extended, OneDark, Solarized, and more, loaded automatically
+- **55 bundled themes** — Dracula, Nord, Monokai Extended, OneDark, Solarized, and more, loaded automatically
 - **Syntax lookup primitives** — token/alias lookup and first-line detection for shebangs, modelines, and XML
 - **Theme authoring** — construct themes with `ThemeSettings`, `ThemeItem`, `ScopeSelectors`, and `StyleModifier`
 - **VS Code theme support** — parse JSON/JSONC themes and register custom plist/VS Code themes

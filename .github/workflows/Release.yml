@@ -1,72 +1,111 @@
-name: Release
-
-# To make a release:
-#
-# 1. Update Cargo.toml version and CHANGELOG.md on master
-# 2. Run workflow https://github.com/trishume/syntect/actions/workflows/Release.yml on master
-# 3. Done!
+name: Release Python package
 
 on:
-  workflow_dispatch: # This workflow can only be triggered manually.
-    inputs:
-      one_time_crates_io_token_secret:
-        description: "A one-time crates.io token (delete it after first use)"
-        required: true
-        type: string
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Make sure regular CI passes before we make a release.
-  ci:
-    uses: ./.github/workflows/CI.yml
-    with:
-      one_time_crates_io_token_secret: masked
+  build-wheels:
+    name: Build wheel (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            manylinux: 2_28
+          - name: linux-aarch64
+            os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            manylinux: 2_28
+          - name: macos-x86_64
+            os: macos-13
+            target: x86_64-apple-darwin
+            manylinux: off
+          - name: macos-arm64
+            os: macos-14
+            target: aarch64-apple-darwin
+            manylinux: off
+          - name: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            manylinux: off
 
-  # After regular CI passes we publish to crates.io and push a git tag.
-  publish-and-tag:
-    needs: ci
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write # So we can push a tag.
-    outputs:
-      VERSION: ${{ steps.version.outputs.VERSION }}
-      TAG_NAME: ${{ steps.version.outputs.TAG_NAME }}
     steps:
-      - run: |
-          # See https://github.com/actions/runner/issues/643#issuecomment-708468716
-          # See https://github.com/actions/runner/issues/475#issuecomment-635775403
-          masked_secret=$(jq -r '.inputs.one_time_crates_io_token_secret' $GITHUB_EVENT_PATH)
-          echo "::add-mask::$masked_secret"
-      - uses: actions/checkout@v6
-      - run: cargo publish -p syntect
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ inputs.one_time_crates_io_token_secret }}
-      - name: version
-        id: version
-        run: |
-          version=$(cargo read-manifest --manifest-path Cargo.toml | jq --raw-output .version)
-          echo "VERSION=${version}" >> $GITHUB_OUTPUT
-          echo "TAG_NAME=v${version}" >> $GITHUB_OUTPUT
-      - name: push tag
-        run: |
-          git tag ${{ steps.version.outputs.TAG_NAME }}
-          git push origin ${{ steps.version.outputs.TAG_NAME }}
+      - uses: actions/checkout@v4
 
-  # Lastly, create a GitHub release.
-  release:
-    needs: publish-and-tag
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --locked --compatibility pypi --out dist -m pyext/Cargo.toml
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.name }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  build-sdist:
+    name: Build source distribution
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # So we can create a release.
     steps:
-      - uses: actions/checkout@v6
-      - run: cargo install parse-changelog@0.6.4 --locked
-      - name: create release
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - uses: actions/checkout@v4
+
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          container: true
+          args: --sdist --locked --out dist -m pyext/Cargo.toml
+
+      - name: Upload sdist
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: [build-wheels, build-sdist]
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/syntect
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheel-*
+          path: dist
+          merge-multiple: true
+
+      - name: Download source distribution
+        uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist
+
+      - name: Check distributions
         run: |
-          notes="$(parse-changelog CHANGELOG.md ${{ needs.publish-and-tag.outputs.VERSION }})"
-          title="${{ needs.publish-and-tag.outputs.TAG_NAME }}"
-          gh release create --title "$title" --notes "$notes" ${{ needs.publish-and-tag.outputs.TAG_NAME }}
+          python -m pip install twine
+          twine check dist/*
+
+      - name: Publish distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

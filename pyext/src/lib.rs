@@ -147,6 +147,8 @@ fn syntect(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(vscode_theme::add_custom_theme, m)?)?;
     m.add_function(wrap_pyfunction!(vscode_theme::load_themes_from_folder, m)?)?;
     m.add_function(wrap_pyfunction!(vscode_theme::list_themes, m)?)?;
+    m.add_function(wrap_pyfunction!(vscode_theme::get_theme, m)?)?;
+    m.add_function(wrap_pyfunction!(vscode_theme::get_theme_set, m)?)?;
     m.add_function(wrap_pyfunction!(vscode_theme::list_syntaxes, m)?)?;
 
     // High-level convenience

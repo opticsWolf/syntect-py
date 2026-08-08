@@ -14,7 +14,9 @@ exclude = [
     "testdata/*",
     "/scripts/*",
     "/Makefile",
-    "/codecov.yml"
+    "/codecov.yml",
+    "pyext/.pytest_cache",
+    "pyext/target/",
 ]
 
 [package.metadata.docs.rs]

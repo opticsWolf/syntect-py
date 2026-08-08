@@ -6,6 +6,7 @@ description = "Python bindings for syntect syntax highlighting"
 authors = ["syntect contributors"]
 license = "MIT"
 repository = "https://github.com/trishume/syntect"
+exclude = [".pytest_cache", "target/"]
 
 [lib]
 name = "syntect"

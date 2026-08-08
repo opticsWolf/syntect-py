@@ -346,6 +346,29 @@ pub fn list_themes() -> PyResult<Vec<String>> {
         .themes.keys().cloned().collect())
 }
 
+/// Get a theme by name from the process-wide convenience theme set.
+///
+/// Returns ``None`` when the name is not registered.
+#[pyfunction]
+pub fn get_theme(name: &str) -> PyResult<Option<PyTheme>> {
+    let lock = global_themes().lock()
+        .map_err(|_| PyErr::new::<PyValueError, _>("Global theme set is poisoned"))?;
+    Ok(lock.themes.get(name).map(|theme| PyTheme::from_syntect(name, theme)))
+}
+
+/// Return a ``ThemeSet`` backed by the process-wide convenience registry.
+///
+/// Use this when you need a ``ThemeSet`` object for ``Highlighter.highlight_line``
+/// or ``HighlightLines.highlight_line`` — it contains all bundled themes
+/// plus any custom themes registered via ``add_custom_theme`` or
+/// ``load_themes_from_folder``.
+#[pyfunction]
+pub fn get_theme_set() -> PyResult<crate::theme_set::PyThemeSet> {
+    let lock = global_themes().lock()
+        .map_err(|_| PyErr::new::<PyValueError, _>("Global theme set is poisoned"))?;
+    Ok(crate::theme_set::PyThemeSet { inner: SyntectThemeSet { themes: lock.themes.clone() } })
+}
+
 /// List names in syntect's default syntax set.
 #[pyfunction]
 pub fn list_syntaxes() -> Vec<String> {

@@ -48,7 +48,7 @@ Changelog = "https://github.com/syntect-py/syntect-py/blob/main/CHANGELOG.md"
 
 [tool.maturin]
 features = ["pyo3/extension-module", "metadata"]
-include = ["syntect/themes/*"]
+include = ["pyext/syntect/themes/*"]
 
 [tool.maturin.debug]
 rustflags = []

@@ -212,7 +212,7 @@ All `find_syntax_by_*` and `syntaxes()` methods use a shared `syntax_ref_to_py()
 
 ### 5.10 VS Code themes and the process-wide registry
 
-`vscode_theme.rs` accepts plist XML or VS Code JSON/JSONC. `add_custom_theme()` writes to a process-wide registry used by `list_themes()`. Caller-owned `ThemeSet` instances remain independent and are modified with `add_theme()` or `add_theme_from_reader()`.
+`vscode_theme.rs` accepts plist XML or VS Code JSON/JSONC. `add_custom_theme()` writes to a process-wide registry used by `list_themes()`, `get_theme()`, and `get_theme_set()`. Caller-owned `ThemeSet` instances remain independent and are modified with `add_theme()` or `add_theme_from_reader()`.
 
 ### 5.11 Bundled themes and package layout
 
@@ -225,7 +225,7 @@ syntect/
 └── themes/              # 55 mordant themes
 ```
 
-The extension searches for `themes/` next to itself and falls back to the source-tree package path during development. Invalid bundled files are skipped during import; explicit `load_themes_from_folder()` calls are strict.
+The extension searches for `themes/` next to itself and falls back to the source-tree package path during development. Invalid bundled files are skipped during import; explicit `load_themes_from_folder()` calls are strict. The sdist `include = ["pyext/syntect/themes/*"]` directive places theme files at `pyext/syntect/themes/` in the tarball, matching the `include_str!` path in `assets.rs`.
 
 ### 5.12 Assets compatibility boundary
 
@@ -405,6 +405,8 @@ The asset API intentionally matches the planned `syntect-assets` surface, but cu
 | `add_custom_theme` | `vscode_theme` | `(name, content)` | `None` |
 | `load_themes_from_folder` | `vscode_theme` | `(path)` | `List[str]` |
 | `list_themes` / `list_syntaxes` | `vscode_theme` | `()` | `List[str]` |
+| `get_theme` | `vscode_theme` | `(name: str)` | `Optional[Theme]` |
+| `get_theme_set` | `vscode_theme` | `()` | `ThemeSet` |
 | `load_assets` | `assets` | `()` | `Assets` |
 
 ---

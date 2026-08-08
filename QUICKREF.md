@@ -339,6 +339,14 @@ syntect.add_custom_theme("my-vscode-theme", content)
 print(syntect.list_themes())
 print(syntect.list_syntaxes())
 
+# Get a theme by name from the global registry (returns None if missing)
+tmtheme = syntect.get_theme("Monokai Extended")
+json_theme = syntect.get_theme("Andromeda-color-theme")
+
+# Get a ThemeSet containing all bundled themes for use with Highlighter
+bundle_ts = syntect.get_theme_set()
+# bundle_ts.theme_names() → list of all 60 registered theme names
+
 # Load all .tmTheme and .json files from a directory
 loaded = syntect.load_themes_from_folder("/path/to/themes")
 ```
@@ -830,7 +838,7 @@ if theme is None:
 |---|---|---|
 | Core | `Color`, `FontStyle`, `Style`, `StyleModifier` | — |
 | Syntax | `SyntaxSet`, `SyntaxReference`, `SyntaxSetBuilder` | — |
-| Theme | `ThemeSet`, `Theme`, `ThemeSettings`, `ThemeItem`, `ScopeSelectors`, `UnderlineOption` | `is_vscode_theme`, `is_plist_theme`, `parse_vscode_theme`, `add_custom_theme`, `load_themes_from_folder`, `list_themes`, `list_syntaxes` |
+| Theme | `ThemeSet`, `Theme`, `ThemeSettings`, `ThemeItem`, `ScopeSelectors`, `UnderlineOption` | `is_vscode_theme`, `is_plist_theme`, `parse_vscode_theme`, `add_custom_theme`, `load_themes_from_folder`, `list_themes`, `get_theme`, `get_theme_set`, `list_syntaxes` |
 | Assets | `Assets`, `HighlightingAssets` | `load_assets` |
 | Metadata | `Metadata`, `MetadataSet`, `MetadataItem` | — |
 | Highlighting | `Highlighter`, `HighlightState`, `HighlightLines`, `HighlightResult`, `ScoredStyle` | `highlight_string` |

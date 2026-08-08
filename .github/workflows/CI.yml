@@ -47,7 +47,11 @@ jobs:
     name: Rust checks
     runs-on: ubuntu-latest
     steps:
+      # The Rust test suite loads grammars/themes from git submodules under
+      # testdata/, so unlike the Python wheel jobs it needs a recursive checkout.
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
       - name: Test syntect library
         run: cargo test --all-features

@@ -31,7 +31,9 @@ def test_lookup_primitives_support_mordant_cascade():
 
 
 def test_theme_reader_and_registration():
-    source = Path(__file__).parents[2] / "testdata" / "Solarized" / "Solarized (dark).tmTheme"
+    # Use a tracked package theme rather than the Solarized testdata
+    # submodule, which is not initialized by the GitHub checkout action.
+    source = Path(__file__).parents[1] / "syntect" / "themes" / "Solarized (dark).tmTheme"
     content = source.read_text(encoding="utf-8")
     theme = syntect.ThemeSet.load_theme_from_reader(content)
     assert theme.settings.background is not None
